@@ -91,3 +91,37 @@ To run the training loop or other Python tools:
 *   `cpp/configs/gtp_example.cfg`: extensively commented configuration file explaining many engine parameters.
 *   `Compiling.md`: Detailed compilation instructions for all platforms.
 *   `docs/GTP_Extensions.md`: Documentation for KataGo's specific GTP extensions (analysis, rules, etc.).
+
+## Real-Time API Service
+
+KataGo now includes a Python-based REST/WebSocket API for real-time analysis, useful for integrating into web services.
+
+### 1. Configuration
+A `.env` file in the project root is used for configuration.
+*   **Template:** `.env.example` (copy this to `.env`)
+*   **Variables:** `KATAGO_PATH`, `KATAGO_MODEL_PATH`, `KATAGO_CONFIG_PATH`.
+
+### 2. Starting the Service
+Run from the project root:
+```bash
+PYTHONPATH=python python3 -m realtime_api.main
+```
+The service defaults to `0.0.0.0:8000`.
+
+### 3. Testing
+**Health Check:**
+```bash
+curl http://localhost:8000/health
+```
+
+**Analysis Request:**
+```bash
+curl -X POST "http://localhost:8000/analyze" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "id": "test",
+           "moves": [["B","Q4"]],
+           "rules": "Chinese"
+         }'
+```
+See `docs/RealTimeAPI_TestGuide.md` for a complete guide.

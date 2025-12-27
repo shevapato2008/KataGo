@@ -1,132 +1,136 @@
-import unittest
+import pytest
+import asyncio
 import json
-import time
-import threading
-from unittest.mock import MagicMock, patch
-from io import StringIO
-from realtime_api.models import AnalysisRequest, AnalysisResponse, MoveInfo
-from realtime_api.engine import KataGoEngine
+from unittest.mock import MagicMock, AsyncMock, patch
+from httpx import AsyncClient, ASGITransport
+from realtime_api.main import app
+from realtime_api.katago_wrapper import KataGoWrapper
 
-class TestModels(unittest.TestCase):
-    def test_request_to_dict(self):
-        req = AnalysisRequest(
-            id="test_1",
-            moves=[("B", "Q4")],
-            maxVisits=100
-        )
-        data = req.to_dict()
-        self.assertEqual(data["id"], "test_1")
-        self.assertEqual(data["moves"], [("B", "Q4")])
-        self.assertEqual(data["maxVisits"], 100)
-        self.assertEqual(data["rules"], "chinese") # default
+# Helper to mock process
+def mock_process():
+    process = AsyncMock()
+    # stdin.write is a synchronous method on StreamWriter, so use MagicMock
+    process.stdin = MagicMock()
+    process.stdin.write = MagicMock()
+    process.stdin.drain = AsyncMock()
+    
+    process.stdout = AsyncMock()
+    process.stderr = AsyncMock()
+    process.returncode = None
+    
+    # Prevent infinite loops in log readers by default: return EOF immediately
+    process.stderr.readline.return_value = b""
+    process.stdout.readline.return_value = b"" 
+    
+    # terminate() and kill() are synchronous methods on the Process object
+    process.terminate = MagicMock()
+    process.kill = MagicMock()
+    
+    return process
+@pytest.mark.asyncio
+async def test_katago_wrapper_lifecycle():
+    with patch("asyncio.create_subprocess_exec") as mock_exec:
+        process = mock_process()
+        process.stdout.readline.return_value = b""
+        mock_exec.return_value = process
+        
+        wrapper = KataGoWrapper("katago", "config", "model")
+        
+        await wrapper.start()
+        
+        assert wrapper.process is not None
+        assert wrapper.running is True
+        
+        await wrapper.stop()
+        assert wrapper.running is False
+        assert wrapper.process is None
 
-    def test_response_from_dict(self):
-        data = {
-            "id": "test_1",
-            "isDuringSearch": False,
-            "moveInfos": [
-                {
-                    "move": "Q4",
-                    "visits": 10,
-                    "winrate": 0.55,
-                    "scoreLead": 1.5,
-                    "scoreSelfplay": 2.0,
-                    "utility": 0.1,
-                    "prior": 0.05,
-                    "order": 0,
-                    "pv": ["Q4", "D4"]
-                }
-            ],
-            "rootInfo": {
-                "winrate": 0.54,
-                "scoreLead": 1.4,
-                "visits": 10,
-                "utility": 0.09
+@pytest.mark.asyncio
+async def test_katago_wrapper_query():
+    with patch("asyncio.create_subprocess_exec") as mock_exec:
+        process = mock_process()
+        
+        # Prepare a response
+        response_data = {"id": "test_id", "result": "ok"}
+        response_line = json.dumps(response_data).encode() + b"\n"
+        
+        # read_loop will call readline. 
+        # 1. First call: returns response
+        # 2. Second call: returns b"" (EOF) to stop the loop
+        process.stdout.readline.side_effect = [response_line, b""]
+        mock_exec.return_value = process
+        
+        wrapper = KataGoWrapper("katago", "config", "model")
+        await wrapper.start()
+        
+        # Send query
+        result = await wrapper.query({"id": "test_id"})
+        
+        assert result == response_data
+        
+        # Check that stdin was written to
+        process.stdin.write.assert_called_once()
+        written = process.stdin.write.call_args[0][0]
+        assert b"test_id" in written
+        
+        await wrapper.stop()
+
+@pytest.mark.asyncio
+async def test_api_analyze_success():
+    # Patch the global INSTANCE in main directly
+    with patch("realtime_api.main.katago_wrapper", new_callable=MagicMock) as mock_wrapper:
+        mock_wrapper.start = AsyncMock()
+        mock_wrapper.stop = AsyncMock()
+        mock_wrapper.process = MagicMock()
+        mock_wrapper.process.returncode = None
+        
+        expected_response = {"id": "req_1", "moveInfos": []}
+        mock_wrapper.query = AsyncMock(return_value=expected_response)
+        
+        # Use ASGITransport for modern httpx compatibility
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            payload = {
+                "id": "req_1",
+                "moves": [["B", "Q4"]],
+                "rules": "Chinese"
             }
-        }
-        resp = AnalysisResponse.from_dict(data)
-        self.assertEqual(resp.id, "test_1")
-        self.assertFalse(resp.isDuringSearch)
-        self.assertEqual(len(resp.moveInfos), 1)
-        self.assertEqual(resp.moveInfos[0].move, "Q4")
-        self.assertIsNotNone(resp.rootInfo)
-        self.assertEqual(resp.rootInfo.winrate, 0.54)
-
-class TestEngine(unittest.TestCase):
-    @patch("subprocess.Popen")
-    def test_engine_initialization(self, mock_popen):
-        mock_process = MagicMock()
-        mock_popen.return_value = mock_process
-        mock_process.stdout.readline.side_effect = ["", ""] # End immediately
-        mock_process.stderr.readline.side_effect = ["", ""]
-        
-        engine = KataGoEngine("katago", "config.cfg", "model.bin.gz")
-        
-        mock_popen.assert_called_once()
-        args = mock_popen.call_args[0][0]
-        self.assertIn("katago", args)
-        self.assertIn("analysis", args)
-        
-        engine.stop()
-
-    @patch("subprocess.Popen")
-    def test_submit_analysis(self, mock_popen):
-        mock_process = MagicMock()
-        mock_popen.return_value = mock_process
-        
-        # Simulate stdout returning a response then empty string to finish thread
-        response_data = {
-            "id": "req_1",
-            "isDuringSearch": False,
-            "moveInfos": []
-        }
-        
-        ready_event = threading.Event()
-
-        # Use an iterator to yield responses, with a delay before EOF
-        responses = iter([json.dumps(response_data) + "\n", ""])
-        def delayed_readline():
-            # Wait for signal before first response
-            if not ready_event.is_set():
-                ready_event.wait(timeout=2.0)
+            response = await client.post("/analyze", json=payload)
+            assert response.status_code == 200
+            assert response.json() == expected_response
             
-            try:
-                val = next(responses)
-                if val == "":
-                    time.sleep(0.2) # Keep alive long enough for check
-                return val
-            except StopIteration:
-                return ""
+            mock_wrapper.query.assert_called_once()
+            call_arg = mock_wrapper.query.call_args[0][0]
+            assert call_arg["id"] == "req_1"
+            assert call_arg["moves"] == [("B", "Q4")]
 
-        mock_process.stdout.readline.side_effect = delayed_readline
-        mock_process.stderr.readline.side_effect = [""] # No stderr
+@pytest.mark.asyncio
+async def test_api_health_check_success():
+    with patch("realtime_api.main.katago_wrapper", new_callable=MagicMock) as mock_wrapper:
+        mock_wrapper.start = AsyncMock()
+        mock_wrapper.stop = AsyncMock()
+        mock_wrapper.process = MagicMock()
+        mock_wrapper.process.returncode = None
+        mock_wrapper.process.pid = 1234
         
-        engine = KataGoEngine("katago", "config.cfg", "model.bin.gz")
-        
-        received_response = None
-        def callback(resp):
-            nonlocal received_response
-            received_response = resp
-            
-        req = AnalysisRequest(id="req_1", moves=[])
-        engine.submit_analysis(req, callback)
-        
-        # Signal that request is submitted, allow response to flow
-        ready_event.set()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/health")
+            assert response.status_code == 200
+            assert response.json() == {"status": "ok", "pid": 1234}
 
-        # Give threads a moment to process
-        time.sleep(0.2)
+@pytest.mark.asyncio
+async def test_api_health_check_failure():
+    with patch("realtime_api.main.katago_wrapper", new_callable=MagicMock) as mock_wrapper:
+        mock_wrapper.start = AsyncMock()
+        mock_wrapper.stop = AsyncMock()
         
-        self.assertIsNotNone(received_response)
-        self.assertEqual(received_response.id, "req_1")
+        # Case 1: Process died (returncode is not None)
+        mock_wrapper.process = MagicMock()
+        mock_wrapper.process.returncode = 1
         
-        # Check if stdin was written to
-        mock_process.stdin.write.assert_called()
-        written_data = mock_process.stdin.write.call_args[0][0]
-        parsed_written = json.loads(written_data)
-        self.assertEqual(parsed_written["id"], "req_1")
-        
-        engine.stop()
-
-if __name__ == '__main__':
-    unittest.main()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/health")
+            assert response.status_code == 503
+            assert "exited" in response.json()["detail"]

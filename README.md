@@ -15,6 +15,7 @@
   * [Troubleshooting TensorRT Builds](#troubleshooting-tensorrt-builds)
 * [Common Questions and Issues](#common-questions-and-issues)
 * [Features for Developers](#features-for-developers)
+* [Real-Time API Service](#real-time-api-service)
 * [Selfplay Training](#selfplay-training)
 * [Contributors and License](#contributors-and-license)
 
@@ -203,6 +204,26 @@ If you encounter build errors due to a mismatch between your system's TensorRT v
 * **GTP Extensions:** [GTP_Extensions.md](docs/GTP_Extensions.md) - `kata-analyze`, rule changes.
 * **Analysis Engine:** [Analysis_Engine.md](docs/Analysis_Engine.md) - JSON-based batch evaluation.
 * **Python:** Example code in `python/query_analysis_engine_example.py`.
+
+## Real-Time API Service
+A REST/WebSocket API wrapper for real-time analysis is available in `python/realtime_api`.
+
+**1. Configuration:**
+Copy `.env.example` to `.env` and set your paths (`KATAGO_PATH`, `KATAGO_MODEL_PATH`, etc.).
+
+**2. Start the Service:**
+```bash
+# From the project root
+PYTHONPATH=python python3 -m realtime_api.main
+```
+
+**3. Test:**
+```bash
+curl http://localhost:8000/health
+curl -X POST "http://localhost:8000/analyze" -H "Content-Type: application/json" -d '{"id":"test","moves":[["B","Q4"]]}'
+```
+
+See [docs/RealTimeAPI_TestGuide.md](docs/RealTimeAPI_TestGuide.md) for full details.
 
 ## Selfplay Training
 If you'd like to run the full self-play loop and train your own neural nets, see [Selfplay Training](SelfplayTraining.md).
