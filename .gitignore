@@ -90,3 +90,30 @@ cpp/.ninja_log
 cpp/build.ninja
 cpp/KataGoSwift.*
 cpp/include/KataGoSwift/KataGoSwift-swift.h
+
+# --- New Additions ---
+
+# Large Model Files and Archives
+*.bin.gz
+*.gz
+*.zip
+*.tar
+*.onnx
+*.pb
+*.ckpt
+
+# TensorRT Engines and Cache
+*.engine
+*.plan
+*.cache
+
+# Local Environment and Libraries
+libs/
+env_setup.sh
+build_katago.sh
+clean_build.py
+
+# Local Configuration Overrides
+cpp/default_gtp.cfg
+*.cfg
+!cpp/configs/*.cfg
