@@ -152,17 +152,23 @@ ninja
 ```
 
 ### Building with Docker
-KataGo includes a `Dockerfile` for building a containerized version, which is especially useful for avoiding dependency hell (like TensorRT version mismatches).
+KataGo includes a `Dockerfile` for building a containerized version, which is especially useful for avoiding dependency hell (like TensorRT version mismatches). The container builds the TensorRT backend and starts the real-time API by default.
 
 1. **Build the Image:**
    ```bash
    docker build -t katago-trt .
    ```
 
-2. **Run KataGo in Docker:**
+2. **Run the Real-Time API:**
    (Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed)
    ```bash
-   docker run --gpus all -it katago-trt ./katago benchmark -model default_model.bin.gz -config default_gtp.cfg
+   docker run --gpus all -p 8000:8000 katago-trt
+   ```
+   The container will auto-download the default model on first start (as configured in `config.yaml`).
+
+3. **Run KataGo directly (optional):**
+   ```bash
+   docker run --gpus all -it katago-trt ./cpp/katago benchmark -model /app/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz -config /app/cpp/configs/analysis_example.cfg
    ```
 
 ### Troubleshooting TensorRT Builds
@@ -209,7 +215,8 @@ If you encounter build errors due to a mismatch between your system's TensorRT v
 A REST/WebSocket API wrapper for real-time analysis is available in `python/realtime_api`.
 
 **1. Configuration:**
-Copy `.env.example` to `.env` and set your paths (`KATAGO_PATH`, `KATAGO_MODEL_PATH`, etc.).
+Edit `config.yaml` in the repo root to set the KataGo binary/config paths, model location, and any runtime library paths.
+The default config points at the latest KataGo model URL and will auto-download it on first run if enabled.
 
 **2. Start the Service:**
 ```bash

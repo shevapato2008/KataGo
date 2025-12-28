@@ -13,13 +13,15 @@ This guide explains how to configure, start, and manually test the KataGo Real-T
 
 ## 2. Configuration
 
-The API uses a `.env` file in the project root for configuration. 
+The API uses `config.yaml` in the project root for configuration.
 
-1. Copy the example: `cp .env.example .env`
-2. Edit `.env` to match your local paths:
-   - `KATAGO_PATH`: Path to the executable.
-   - `KATAGO_MODEL_PATH`: Path to your model.
-   - `KATAGO_CONFIG_PATH`: Path to the analysis config.
+1. Edit `config.yaml` to match your local paths:
+   - `katago.path`: Path to the executable.
+   - `katago.model.path`: Path to your model.
+   - `katago.config_path`: Path to the analysis config.
+2. If `katago.model.auto_download` is true, the model will download from `katago.model.url` when missing.
+   The default config uses the latest published KataGo model and stores it under `./models/`.
+3. Optional: set `katago.model.sha256` to verify model integrity on startup and after downloads.
 
 ## 3. Starting the Service
 
@@ -48,24 +50,24 @@ Send board positions for analysis.
 ```bash
 curl -X POST "http://localhost:8000/analyze" \
      -H "Content-Type: application/json" \
-     -d 
+     -d '{
            "id": "req_001",
            "moves": [["B", "Q4"]],
            "rules": "Chinese",
            "komi": 7.5
-         
+         }'
 ```
 
 **Example: Complex Position (Initial Stones)**
 ```bash
 curl -X POST "http://localhost:8000/analyze" \
      -H "Content-Type: application/json" \
-     -d 
+     -d '{
            "id": "req_002",
            "initialStones": [["B", "Q4"], ["W", "D4"]],
            "moves": [["B", "R16"]],
            "maxVisits": 50
-         
+        }'
 ```
 
 ## 5. Understanding the Response

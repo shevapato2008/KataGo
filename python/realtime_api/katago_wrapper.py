@@ -1,17 +1,26 @@
 import asyncio
 import json
 import logging
+import os
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
 class KataGoWrapper:
-    def __init__(self, katago_path: str, config_path: str, model_path: str, additional_args: list[str] = None):
+    def __init__(
+        self,
+        katago_path: str,
+        config_path: str,
+        model_path: str,
+        additional_args: Optional[List[str]] = None,
+        ld_library_paths: Optional[List[str]] = None,
+    ):
         self.katago_path = katago_path
         self.config_path = config_path
         self.model_path = model_path
         self.additional_args = additional_args or []
+        self.ld_library_paths = ld_library_paths or []
         self.process: Optional[asyncio.subprocess.Process] = None
         self.pending_requests: Dict[str, asyncio.Future] = {}
         self.running = False
@@ -20,6 +29,9 @@ class KataGoWrapper:
     async def start(self):
         if self.process:
             return
+
+        env = os.environ.copy()
+        self._merge_ld_library_path(env)
 
         cmd = [
             self.katago_path,
@@ -30,13 +42,20 @@ class KataGoWrapper:
         ]
         
         logger.info(f"Starting KataGo: {' '.join(cmd)}")
+
+        ld_library_path = env.get("LD_LIBRARY_PATH")
+        if ld_library_path:
+            logger.info(f"Using LD_LIBRARY_PATH for KataGo: {ld_library_path}")
+        else:
+            logger.warning("LD_LIBRARY_PATH is not set; backend runtime libraries may fail to load")
         
         try:
             self.process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                env=env
             )
             self.running = True
             self.read_task = asyncio.create_task(self._read_loop())
@@ -125,3 +144,15 @@ class KataGoWrapper:
                 # logger.debug(f"KataGo Stderr: {line.decode().strip()}")
             except:
                 break
+
+    def _merge_ld_library_path(self, env: Dict[str, str]) -> None:
+        if not self.ld_library_paths:
+            return
+
+        current_ld = env.get("LD_LIBRARY_PATH", "")
+        merged_paths = []
+        for path in self.ld_library_paths + (current_ld.split(":") if current_ld else []):
+            if path and path not in merged_paths:
+                merged_paths.append(path)
+
+        env["LD_LIBRARY_PATH"] = ":".join(merged_paths)

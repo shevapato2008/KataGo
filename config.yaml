@@ -1,0 +1,17 @@
+katago:
+  path: ./cpp/katago
+  config_path: ./cpp/configs/analysis_example.cfg
+  model:
+    path: ./models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
+    url: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
+    auto_download: true
+    sha256: 798da8fe3e9819f09535240b1bc29cb3047a4fa981433c56c491e57007a3d3f0
+  additional_args: []
+  ld_library_paths:
+    - ./libs/TensorRT-8.6/lib
+    - /usr/local/cuda/lib64
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  reload: true

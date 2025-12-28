@@ -97,9 +97,8 @@ To run the training loop or other Python tools:
 KataGo now includes a Python-based REST/WebSocket API for real-time analysis, useful for integrating into web services.
 
 ### 1. Configuration
-A `.env` file in the project root is used for configuration.
-*   **Template:** `.env.example` (copy this to `.env`)
-*   **Variables:** `KATAGO_PATH`, `KATAGO_MODEL_PATH`, `KATAGO_CONFIG_PATH`.
+`config.yaml` in the project root is used for configuration.
+*   **Settings:** `katago.path`, `katago.model.path`, `katago.config_path`, and optional model auto-download.
 
 ### 2. Starting the Service
 Run from the project root:

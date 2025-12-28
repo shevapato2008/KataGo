@@ -89,5 +89,5 @@ Crucial settings for real-time performance:
     *   Benchmark latency vs. `maxVisits` vs. Model Size.
     *   Tune `analysis.cfg` for max batch throughput.
 4.  **Scaling (Day 8+):**
-    *   Dockerize the setup (CUDA base image).
+    *   Dockerize the setup (TensorRT base image for GPU builds).
     *   Deploy behind Nginx/HAProxy load balancer.
