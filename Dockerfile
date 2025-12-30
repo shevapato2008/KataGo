@@ -1,6 +1,7 @@
 FROM nvcr.io/nvidia/tensorrt:23.10-py3
 
 # Install dependencies
+RUN sed -i "s|http://archive.ubuntu.com/ubuntu/|http://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g" /etc/apt/sources.list && sed -i "s|http://security.ubuntu.com/ubuntu/|http://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g" /etc/apt/sources.list
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -17,7 +18,8 @@ WORKDIR /app
 COPY . /app
 
 # Install Python dependencies
-RUN python3 -m pip install --no-cache-dir -r /app/requirements.txt
+RUN python3 -m pip install --trusted-host pypi.tuna.tsinghua.edu.cn -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=100 --no-cache-dir --upgrade pip && \ 
+    python3 -m pip install --trusted-host pypi.tuna.tsinghua.edu.cn -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=100 --no-cache-dir -r /app/requirements-api.txt
 
 # Build
 WORKDIR /app/cpp

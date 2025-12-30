@@ -168,7 +168,9 @@ KataGo includes a `Dockerfile` for building a containerized version, which is es
 
 3. **Run KataGo directly (optional):**
    ```bash
-   docker run --gpus all -it katago-trt ./cpp/katago benchmark -model /app/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz -config /app/cpp/configs/analysis_example.cfg
+   docker run --gpus all -it katago-trt ./cpp/katago benchmark \
+       -model /app/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
+       -config /app/cpp/configs/analysis_example.cfg
    ```
 
 ### Troubleshooting TensorRT Builds

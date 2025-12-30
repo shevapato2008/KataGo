@@ -1,0 +1,6 @@
+.git
+libs/
+cpp/build/
+models/
+*.bin.gz
+*.zip

@@ -1,0 +1,16 @@
+# Core dependencies for KataGo Python tools
+numpy==1.26.4
+sgfmill==1.1.1
+
+# Dependencies for Real-Time API (Step 2 Implementation)
+fastapi==0.109.2
+uvicorn==0.27.1
+pydantic==2.6.1
+orjson==3.9.15
+PyYAML==6.0.1
+
+# Testing and Development
+pytest==8.0.1
+pytest-asyncio
+httpx
+requests==2.32.5
