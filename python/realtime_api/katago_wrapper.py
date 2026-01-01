@@ -141,7 +141,7 @@ class KataGoWrapper:
                     break
                 # Only log if it looks like an error or explicit log
                 # For now just debug or ignore to avoid clutter
-                # logger.debug(f"KataGo Stderr: {line.decode().strip()}")
+                logger.info(f"KataGo Stderr: {line.decode().strip()}")
             except:
                 break
 

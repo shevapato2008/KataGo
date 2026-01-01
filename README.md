@@ -240,3 +240,12 @@ If you'd like to run the full self-play loop and train your own neural nets, see
 ## Contributors and License
 See [CONTRIBUTORS](CONTRIBUTORS) for the list of contributors.
 Code is licensed under [LICENSE](LICENSE).
+
+## Troubleshooting
+
+### Docker GPU Issues
+If you see 'could not select device driver' or 'NVIDIA Driver was not detected':
+1. Ensure NVIDIA Container Toolkit is installed.
+2. Run `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`.
+3. If issues persist, **reboot your system** to reload the driver hooks.
+4. Verify with: `docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi`

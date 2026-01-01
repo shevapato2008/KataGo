@@ -140,7 +140,7 @@ async def _ensure_model_available(config: AppConfig) -> None:
 
     logger.info("Downloading model from %s to %s", model.url, model.path)
     try:
-        await asyncio.to_thread(_download_model, model.url, model.path, expected_sha)
+        loop = asyncio.get_running_loop(); await loop.run_in_executor(None, _download_model, model.url, model.path, expected_sha)
         logger.info("Model download completed.")
     except Exception as e:
         logger.error("Failed to download model: %s", e)

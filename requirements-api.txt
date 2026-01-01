@@ -1,5 +1,5 @@
 # Core dependencies for KataGo Python tools
-numpy==1.26.4
+numpy>=1.21
 sgfmill==1.1.1
 
 # Dependencies for Real-Time API (Step 2 Implementation)
@@ -13,4 +13,4 @@ PyYAML==6.0.1
 pytest==8.0.1
 pytest-asyncio
 httpx
-requests==2.32.5
+requests>=2.31
