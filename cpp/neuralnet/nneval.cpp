@@ -470,6 +470,10 @@ void NNEvaluator::serve(
     int numRows = (int)resultBufs.size();
     assert(numRows > 0);
 
+    if(logger != NULL) {
+      logger->write("Processing batch of size " + Global::intToString(numRows));
+    }
+
     bool doRandomize = currentDoRandomize.load(std::memory_order_acquire);
     int defaultSymmetry = currentDefaultSymmetry.load(std::memory_order_acquire);
 
