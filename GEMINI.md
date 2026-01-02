@@ -124,3 +124,10 @@ curl -X POST "http://localhost:8000/analyze" \
          }'
 ```
 See `docs/RealTimeAPI_TestGuide.md` for a complete guide.
+
+### 4. Server Optimization
+The service is optimized for **single-process batch inference** to handle concurrent requests efficiently without model duplication.
+*   **Strategy:** "Middle Ground" threading (8 concurrent analysis threads × 8 search threads per request).
+*   **Config:** `cpp/configs/server_analysis.cfg` (derived from `analysis_example.cfg`).
+*   **Batching:** Max batch size set to 64 to match total thread count, ensuring GPU saturation.
+*   **Logging:** Batch size logging added to `NNEvaluator` in C++ to monitor batch formation effectiveness.
