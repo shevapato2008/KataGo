@@ -74,6 +74,8 @@ app = FastAPI(lifespan=lifespan)
 
 class MoveRequest(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    gameId: Optional[str] = None
+    userId: Optional[str] = None
     moves: List[Tuple[str, str]] = [] 
     initialStones: List[Tuple[str, str]] = []
     rules: str = "Chinese"
@@ -81,6 +83,7 @@ class MoveRequest(BaseModel):
     boardXSize: int = 19
     boardYSize: int = 19
     includePolicy: bool = True
+    includeOwnership: bool = False
     maxVisits: Optional[int] = None
     priority: int = 0
 
@@ -89,13 +92,16 @@ async def analyze(request: MoveRequest):
     if not katago_wrapper:
         raise HTTPException(status_code=503, detail="KataGo engine not initialized")
     
+    if request.gameId or request.userId:
+        logger.info(f"Analysis request {request.id} for game={request.gameId}, user={request.userId}")
+    
     query = request.model_dump(exclude_none=True)
     
     try:
         result = await katago_wrapper.query(query)
         return result
     except Exception as e:
-        logger.error(f"Analysis failed: {e}")
+        logger.error(f"Analysis failed (id={request.id}, game={request.gameId}, user={request.userId}): {e}")
         # Check if process is dead
         if katago_wrapper.process and katago_wrapper.process.returncode is not None:
              raise HTTPException(status_code=503, detail="KataGo engine process died")

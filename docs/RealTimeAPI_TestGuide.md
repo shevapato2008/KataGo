@@ -70,7 +70,20 @@ curl -X POST "http://localhost:8000/analyze" \
         }'
 ```
 
+**Example: Multi-tenancy (gameId and userId)**
+```bash
+curl -X POST "http://localhost:8000/analyze" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "id": "req_003",
+           "gameId": "game_2026-01-02_001",
+           "userId": "user_abc123",
+           "moves": [["B", "Q4"], ["W", "D4"]]
+        }'
+```
+
 ## 5. Understanding the Response
+
 
 The API returns a JSON object containing the analysis results. Here is a breakdown of the key fields:
 

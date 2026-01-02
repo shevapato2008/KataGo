@@ -14,6 +14,8 @@ class AnalysisRequest:
     priority: int = 0
     maxVisits: Optional[int] = None
     initialStones: List[Tuple[str, str]] = field(default_factory=list)
+    gameId: Optional[str] = None
+    userId: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data = {
@@ -30,6 +32,10 @@ class AnalysisRequest:
         }
         if self.maxVisits is not None:
             data["maxVisits"] = self.maxVisits
+        if self.gameId is not None:
+            data["gameId"] = self.gameId
+        if self.userId is not None:
+            data["userId"] = self.userId
         return data
 
 @dataclass
