@@ -35,19 +35,19 @@ class KataGoWrapper:
 
         cmd = [
             self.katago_path,
-            "analysis",
-            "-config", self.config_path,
-            "-model", self.model_path,
+            'analysis',
+            '-config', self.config_path,
+            '-model', self.model_path,
             *self.additional_args
         ]
         
-        logger.info(f"Starting KataGo: {' '.join(cmd)}")
+        logger.info(f'Starting KataGo: {" ".join(cmd)}')
 
-        ld_library_path = env.get("LD_LIBRARY_PATH")
+        ld_library_path = env.get('LD_LIBRARY_PATH')
         if ld_library_path:
-            logger.info(f"Using LD_LIBRARY_PATH for KataGo: {ld_library_path}")
+            logger.info(f'Using LD_LIBRARY_PATH for KataGo: {ld_library_path}')
         else:
-            logger.warning("LD_LIBRARY_PATH is not set; backend runtime libraries may fail to load")
+            logger.warning('LD_LIBRARY_PATH is not set; backend runtime libraries may fail to load')
         
         try:
             self.process = await asyncio.create_subprocess_exec(
@@ -61,7 +61,7 @@ class KataGoWrapper:
             self.read_task = asyncio.create_task(self._read_loop())
             asyncio.create_task(self._log_stderr())
         except Exception as e:
-            logger.error(f"Failed to start KataGo: {e}")
+            logger.error(f'Failed to start KataGo: {e}')
             raise
 
     async def stop(self):
@@ -85,16 +85,22 @@ class KataGoWrapper:
             # If process crashed or hasn't started, try to start it
             await self.start()
         
-        query_id = query_data.get("id")
+        query_id = query_data.get('id')
         if not query_id:
             query_id = str(uuid.uuid4())
-            query_data["id"] = query_id
+            query_data['id'] = query_id
         
         future = asyncio.get_running_loop().create_future()
         self.pending_requests[query_id] = future
         
+        # Filter out fields that KataGo C++ engine does not understand
+        safe_query_data = {
+            k: v for k, v in query_data.items() 
+            if k not in ('gameId', 'userId')
+        }
+        
         try:
-            json_str = json.dumps(query_data) + "\n"
+            json_str = json.dumps(safe_query_data) + '\n'
             self.process.stdin.write(json_str.encode())
             await self.process.stdin.drain()
             return await future
@@ -115,22 +121,22 @@ class KataGoWrapper:
                 
                 try:
                     response = json.loads(line_str)
-                    req_id = response.get("id")
+                    req_id = response.get('id')
                     if req_id and req_id in self.pending_requests:
                         future = self.pending_requests.pop(req_id)
                         if not future.done():
                             future.set_result(response)
                 except json.JSONDecodeError:
-                    logger.error(f"Failed to decode JSON: {line_str}")
+                    logger.error(f'Failed to decode JSON: {line_str}')
             except Exception as e:
-                logger.error(f"Error reading from KataGo: {e}")
+                logger.error(f'Error reading from KataGo: {e}')
                 break
         
-        logger.warning("KataGo read loop exited")
+        logger.warning('KataGo read loop exited')
         # Fail all pending requests if process dies
         for future in self.pending_requests.values():
             if not future.done():
-                future.set_exception(RuntimeError("KataGo process terminated"))
+                future.set_exception(RuntimeError('KataGo process terminated'))
         self.pending_requests.clear()
 
     async def _log_stderr(self):
@@ -141,7 +147,7 @@ class KataGoWrapper:
                     break
                 # Only log if it looks like an error or explicit log
                 # For now just debug or ignore to avoid clutter
-                logger.info(f"KataGo Stderr: {line.decode().strip()}")
+                logger.info(f'KataGo Stderr: {line.decode().strip()}')
             except:
                 break
 
@@ -149,10 +155,10 @@ class KataGoWrapper:
         if not self.ld_library_paths:
             return
 
-        current_ld = env.get("LD_LIBRARY_PATH", "")
+        current_ld = env.get('LD_LIBRARY_PATH', '')
         merged_paths = []
-        for path in self.ld_library_paths + (current_ld.split(":") if current_ld else []):
+        for path in self.ld_library_paths + (current_ld.split(':') if current_ld else []):
             if path and path not in merged_paths:
                 merged_paths.append(path)
 
-        env["LD_LIBRARY_PATH"] = ":".join(merged_paths)
+        env['LD_LIBRARY_PATH'] = ':'.join(merged_paths)

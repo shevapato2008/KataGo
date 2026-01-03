@@ -160,15 +160,29 @@ KataGo includes a `Dockerfile` for building a containerized version, which is es
    ```
 
 2. **Run the Real-Time API:**
+
+2.1. Docker run in detached mode
    (Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed)
    ```bash
-   docker run --gpus all -p 8000:8000 katago-trt
+   docker run -d --gpus all -p 8000:8000 katago-trt
    ```
    The container will auto-download the default model on first start (as configured in `config.yaml`).
+   To run the katago-trt image in the background (detached mode), use the `-d` flag.
+
+2.2. View logs
+  To see the logs of a container running in the background, use:
+   1 docker logs -f <container_id_or_name>
+  (The `-f` flag "follows" the logs, similar to `tail -f`.)
+
+2.3. Close terminal
+  Yes, you can close the terminal. Because you used the -d (detached) flag,
+  the container is managed by the Docker daemon, not your shell session.
+  It will continue running until it finishes its task, the container crashes,
+  or you manually stop it with `docker stop`.
 
 3. **Run KataGo directly (optional):**
    ```bash
-   docker run --gpus all -it katago-trt ./cpp/katago benchmark \
+   docker run -d --gpus all -it katago-trt ./cpp/katago benchmark \
        -model /app/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
        -config /app/cpp/configs/analysis_example.cfg
    ```
