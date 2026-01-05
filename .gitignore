@@ -58,6 +58,7 @@ out.txt
 
 # For Gemini
 .gemini
+.gemini-clipboard
 
 # For VS
 .vs
