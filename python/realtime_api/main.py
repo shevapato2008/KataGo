@@ -48,11 +48,17 @@ async def lifespan(app: FastAPI):
         app_config.katago.model.path,
     )
 
-    await _ensure_model_available(app_config)
+    await _ensure_models_available(app_config)
+    
+    human_model_path = None
+    if app_config.katago.human_model:
+        human_model_path = app_config.katago.human_model.path
+
     katago_wrapper = KataGoWrapper(
         app_config.katago.path,
         app_config.katago.config_path,
         app_config.katago.model.path,
+        human_model_path=human_model_path,
         additional_args=app_config.katago.additional_args,
         ld_library_paths=app_config.katago.ld_library_paths,
     )
@@ -86,6 +92,7 @@ class MoveRequest(BaseModel):
     includeOwnership: bool = False
     maxVisits: Optional[int] = None
     priority: int = 0
+    overrideSettings: Optional[dict] = None
 
 @app.post("/analyze")
 async def analyze(request: MoveRequest):
@@ -119,37 +126,46 @@ async def health():
     if katago_wrapper.process.returncode is not None:
          raise HTTPException(status_code=503, detail=f"KataGo process exited with code {katago_wrapper.process.returncode}")
          
-    return {"status": "ok", "pid": katago_wrapper.process.pid}
+    return {
+        "status": "ok", 
+        "pid": katago_wrapper.process.pid,
+        "has_human_model": katago_wrapper.has_human_model
+    }
 
 
-async def _ensure_model_available(config: AppConfig) -> None:
-    model = config.katago.model
+async def _ensure_models_available(config: AppConfig) -> None:
+    await _ensure_single_model(config.katago.model, "Main model")
+    if config.katago.human_model:
+        await _ensure_single_model(config.katago.human_model, "Human model")
+
+async def _ensure_single_model(model: "ModelConfig", label: str) -> None:
     expected_sha = _normalize_sha256(model.sha256)
     if expected_sha:
-        logger.info("Expected model SHA256: %s", expected_sha)
+        logger.info("%s expected SHA256: %s", label, expected_sha)
     if os.path.isfile(model.path):
         if expected_sha:
             if _verify_model_checksum(model.path, expected_sha):
                 return
             if not model.auto_download:
-                logger.error("Model checksum mismatch for %s", model.path)
+                logger.error("%s checksum mismatch for %s", label, model.path)
                 return
-            logger.warning("Model checksum mismatch, re-downloading: %s", model.path)
+            logger.warning("%s checksum mismatch, re-downloading: %s", label, model.path)
             os.remove(model.path)
         else:
             return
     if not model.auto_download:
         return
     if not model.url:
-        logger.error("Model auto-download enabled but no model URL configured.")
+        logger.error("%s auto-download enabled but no URL configured.", label)
         return
 
-    logger.info("Downloading model from %s to %s", model.url, model.path)
+    logger.info("Downloading %s from %s to %s", label, model.url, model.path)
     try:
-        loop = asyncio.get_running_loop(); await loop.run_in_executor(None, _download_model, model.url, model.path, expected_sha)
-        logger.info("Model download completed.")
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _download_model, model.url, model.path, expected_sha)
+        logger.info("%s download completed.", label)
     except Exception as e:
-        logger.error("Failed to download model: %s", e)
+        logger.error("Failed to download %s: %s", label, e)
 
 
 def _download_model(url: str, dest_path: str, expected_sha: Optional[str]) -> None:

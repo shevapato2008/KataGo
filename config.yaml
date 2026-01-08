@@ -6,6 +6,11 @@ katago:
     url: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
     auto_download: true
     sha256: 798da8fe3e9819f09535240b1bc29cb3047a4fa981433c56c491e57007a3d3f0
+  human_model:
+    path: ./models/b18c384nbt-humanv0.bin.gz
+    url: https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz
+    auto_download: true
+    sha256: 637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5
   additional_args: []
   ld_library_paths:
     - ./libs/TensorRT-8.6/lib

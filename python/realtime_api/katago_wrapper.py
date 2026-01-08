@@ -13,18 +13,24 @@ class KataGoWrapper:
         katago_path: str,
         config_path: str,
         model_path: str,
+        human_model_path: Optional[str] = None,
         additional_args: Optional[List[str]] = None,
         ld_library_paths: Optional[List[str]] = None,
     ):
         self.katago_path = katago_path
         self.config_path = config_path
         self.model_path = model_path
+        self.human_model_path = human_model_path
         self.additional_args = additional_args or []
         self.ld_library_paths = ld_library_paths or []
         self.process: Optional[asyncio.subprocess.Process] = None
         self.pending_requests: Dict[str, asyncio.Future] = {}
         self.running = False
         self.read_task: Optional[asyncio.Task] = None
+
+    @property
+    def has_human_model(self) -> bool:
+        return bool(self.human_model_path)
 
     async def start(self):
         if self.process:
@@ -38,8 +44,12 @@ class KataGoWrapper:
             'analysis',
             '-config', self.config_path,
             '-model', self.model_path,
-            *self.additional_args
         ]
+        
+        if self.human_model_path:
+            cmd.extend(['-human-model', self.human_model_path])
+            
+        cmd.extend(self.additional_args)
         
         logger.info(f'Starting KataGo: {" ".join(cmd)}')
 
