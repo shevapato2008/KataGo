@@ -19,6 +19,7 @@ class KataGoConfig(BaseModel):
     path: str
     config_path: str
     model: ModelConfig
+    human_model: Optional[ModelConfig] = None
     additional_args: List[str] = Field(default_factory=list)
     ld_library_paths: List[str] = Field(default_factory=list)
 
@@ -54,6 +55,8 @@ def load_config(path: Optional[str] = None) -> AppConfig:
     config.katago.path = _resolve_path(base_dir, config.katago.path)
     config.katago.config_path = _resolve_path(base_dir, config.katago.config_path)
     config.katago.model.path = _resolve_path(base_dir, config.katago.model.path)
+    if config.katago.human_model:
+        config.katago.human_model.path = _resolve_path(base_dir, config.katago.human_model.path)
     config.katago.ld_library_paths = [
         _resolve_path(base_dir, path) for path in config.katago.ld_library_paths
     ]
