@@ -196,8 +196,55 @@ For ARM64 devices with limited RAM (like the Rockchip RK3588), a specialized `Do
    ```
 
 2. **Run the Real-Time API:**
+
+   **Option A: Background Service (Recommended)**
+   Run in detached mode so it keeps running after you close the terminal.
+   ```bash
+   docker run -d -p 8000:8000 --name katago-service --restart unless-stopped katago-rk3588
+   ```
+   *   View logs: `docker logs -f katago-service`
+   *   Stop server: `docker stop katago-service`
+
+   **Option B: Foreground (For Debugging)**
+   See output immediately to check for errors.
    ```bash
    docker run -p 8000:8000 katago-rk3588
+   ```
+
+#### Docker Network Issues (Proxy Configuration)
+If you encounter network timeout errors (e.g., `Client.Timeout exceeded while awaiting headers`) when building the image, especially in regions with restricted network access to Docker Hub, you can configure a proxy or mirror.
+
+**Method 1: Configure Registry Mirrors (Recommended)**
+Edit `/etc/docker/daemon.json` (create it if it doesn't exist) and add:
+```json
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://huecker.io",
+    "https://dockerhub.timeweb.cloud",
+    "https://noohub.ru"
+  ]
+}
+```
+Then restart Docker:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+**Method 2: Configure HTTP Proxy**
+If you have a local proxy (e.g., at `127.0.0.1:7890`), configure Docker to use it:
+1. Create the configuration directory: `sudo mkdir -p /etc/systemd/system/docker.service.d`
+2. Create/edit `/etc/systemd/system/docker.service.d/http-proxy.conf`:
+   ```ini
+   [Service]
+   Environment="HTTP_PROXY=http://127.0.0.1:7890"
+   Environment="HTTPS_PROXY=http://127.0.0.1:7890"
+   ```
+3. Restart Docker:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl restart docker
    ```
 
 ### Troubleshooting TensorRT Builds
