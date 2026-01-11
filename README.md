@@ -187,6 +187,19 @@ KataGo includes a `Dockerfile` for building a containerized version, which is es
        -config /app/cpp/configs/analysis_example.cfg
    ```
 
+#### ARM64 / RK3588 Optimization
+For ARM64 devices with limited RAM (like the Rockchip RK3588), a specialized `Dockerfile.rk3588` is provided. It uses the Eigen (CPU) backend and reduces build parallelism to avoid memory exhaustion during compilation.
+
+1. **Build the Image:**
+   ```bash
+   docker build -f Dockerfile.rk3588 -t katago-rk3588 .
+   ```
+
+2. **Run the Real-Time API:**
+   ```bash
+   docker run -p 8000:8000 katago-rk3588
+   ```
+
 ### Troubleshooting TensorRT Builds
 If you encounter build errors due to a mismatch between your system's TensorRT version (e.g., v10.x) and KataGo's supported version (v8.x), or "API Usage Errors", you can fix this without downgrading your system drivers by using a local copy of the libraries.
 

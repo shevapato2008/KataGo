@@ -1,0 +1,91 @@
+# Stage 1: Builder
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Robustly set mirrors for ARM64 (Ports)
+RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy main restricted universe multiverse" > /etc/apt/sources.list && \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-backports main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    libssl-dev \
+    libzip-dev \
+    zlib1g-dev \
+    libeigen3-dev \
+    pkg-config \
+    python3-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY . /app
+
+WORKDIR /app/cpp
+
+# Clean potential previous builds
+RUN rm -rf CMakeCache.txt CMakeFiles cmake_install.cmake Makefile katago
+
+# Configure and Build
+# Added ARM-specific optimizations for RK3588 (Cortex-A76/A55)
+RUN cmake . -DUSE_BACKEND=EIGEN -DNO_GIT_REVISION=1 \
+    -DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=cortex-a76" && \
+    make -j2
+
+# Stage 2: Runtime
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Robustly set mirrors for Runtime
+RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy main restricted universe multiverse" > /etc/apt/sources.list && \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-backports main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
+
+# Install runtime dependencies
+# libatomic1 is required for ARM atomic operations
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    libzip4 \
+    zlib1g \
+    libssl3 \
+    libatomic1 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy python code and config
+COPY python /app/python
+COPY config.yaml /app/config.yaml
+COPY requirements-api.txt /app/
+
+# CRITICAL FIX: Copy config files needed by the real-time API
+COPY cpp/configs /app/cpp/configs
+
+# Install Python dependencies
+RUN python3 -m pip install --trusted-host pypi.tuna.tsinghua.edu.cn -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=100 --no-cache-dir --upgrade pip wheel && \
+    python3 -m pip install --trusted-host pypi.tuna.tsinghua.edu.cn -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=100 --no-cache-dir -r requirements-api.txt
+
+# Copy KataGo binary from builder
+COPY --from=builder /app/cpp/katago /app/cpp/katago
+
+# Create models directory
+RUN mkdir -p /app/models
+
+# Set Environment Variables
+ENV PYTHONPATH=/app/python
+ENV KATAGO_CONFIG_FILE=/app/config.yaml
+ENV PATH="/app/cpp:${PATH}"
+
+EXPOSE 8000
+
+CMD ["python3", "-m", "realtime_api.main"]
