@@ -116,6 +116,12 @@ Explanation of fields (including some optional fields not present in the above q
    * `reportDuringSearchEvery (float)`: Optional. Specify a number of seconds such that while this position is being searched, KataGo will report the partial analysis every that many seconds.
    * `priority (int)`: Optional. Analysis threads will prefer handling queries with the highest priority unless already started on another task, breaking ties in favor of earlier queries. If not specified, defaults to 0.
    * `priorities (list of integers)`: Optional. When using analyzeTurns, you can use this instead of `priority` if you want a different priority per turn. Must be of same length as `analyzeTurns`, `priorities[0]` is the priority for `analyzeTurns[0]`, `priorities[1]` is the priority for `analyzeTurns[1]`, etc.
+   * `regionBounds (object)`: Optional. Restrict the search and move prediction to a specific rectangular region of the board. The object must contain these fields:
+      * `x1 (int)`: The left column index (0-indexed).
+      * `y1 (int)`: The top row index (0-indexed).
+      * `x2 (int)`: The right column index (0-indexed).
+      * `y2 (int)`: The bottom row index (0-indexed).
+      * All coordinates are inclusive. For a 19x19 board, coordinates range from 0 to 18. (0,0) is top-left.
 
 
 ### Responses

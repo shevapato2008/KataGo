@@ -82,6 +82,26 @@ curl -X POST "http://localhost:8000/analyze" \
         }'
 ```
 
+**Example: Localized Analysis (regionBounds)**
+Restrict the search to a specific 4x4 region at the top-left of the board.
+```bash
+curl -X POST "http://localhost:8000/analyze" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "id": "req_004",
+           "moves": [],
+           "regionBounds": {
+             "x1": 0,
+             "y1": 0,
+             "x2": 3,
+             "y2": 3
+           }
+        }'
+```
+- **Coordinate System**: (0,0) is top-left. For a 19x19 board, x and y range from 0 to 18.
+- **Inclusive**: The bounds `x1, y1` to `x2, y2` are inclusive.
+- **Effect**: All moves in the analysis (best move and PV) will be strictly within the specified region, or a "pass" move.
+
 ## 5. Understanding the Response
 
 
