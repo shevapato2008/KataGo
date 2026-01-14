@@ -78,6 +78,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+class RegionBounds(BaseModel):
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
 class MoveRequest(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     gameId: Optional[str] = None
@@ -88,6 +94,7 @@ class MoveRequest(BaseModel):
     komi: float = 7.5
     boardXSize: int = 19
     boardYSize: int = 19
+    regionBounds: Optional[RegionBounds] = None
     includePolicy: bool = True
     includeOwnership: bool = False
     maxVisits: Optional[int] = None
