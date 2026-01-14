@@ -2,7 +2,7 @@
 
 ## Phase 1: C++ Engine Implementation
 - [x] Task: Define `AnalysisBounds` data structure and coordinate validation logic in C++. 81f94f5
-- [ ] Task: Update the analysis query parser in `command/analysis.cpp` (or relevant file) to support the `regionBounds` field.
+- [x] Task: Update the analysis query parser in `command/analysis.cpp` (or relevant file) to support the `regionBounds` field. d3f950b
 - [x] Task: Write unit tests in C++ to verify that `AnalysisBounds` correctly identifies points inside/outside the rectangle. 81f94f5
 - [ ] Task: Implement move filtering in the search loop (e.g., `Search::getPlaySelectionValues` or node expansion) to respect the bounds.
 - [ ] Task: Write integration tests for the C++ analysis engine to verify localized move prediction on a 19x19 board.
