@@ -6,7 +6,7 @@
 - [x] Task: Write unit tests in C++ to verify that `AnalysisBounds` correctly identifies points inside/outside the rectangle. 81f94f5
 - [x] Task: Implement move filtering in the search loop (e.g., `Search::getPlaySelectionValues` or node expansion) to respect the bounds. c2bdfb1
 - [x] Task: Write integration tests for the C++ analysis engine to verify localized move prediction on a 19x19 board. c2bdfb1
-- [ ] Task: Conductor - User Manual Verification 'C++ Engine Implementation' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'C++ Engine Implementation' (Protocol in workflow.md) c2bdfb1
 
 ## Phase 2: Python API Integration
 - [ ] Task: Update the `MoveRequest` Pydantic model in `python/realtime_api/main.py` to include the optional `region_bounds` field.
