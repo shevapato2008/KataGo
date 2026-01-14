@@ -247,7 +247,8 @@ int MainCmds::analysis(const vector<string>& args) {
     "firstReportDuringSearchAfter",
     "priority",
     "allowMoves",
-    "avoidMoves"
+    "avoidMoves",
+    "regionBounds"
   };
 
   ThreadSafeQueue<string*> toWriteQueue;
@@ -360,6 +361,10 @@ int MainCmds::analysis(const vector<string>& args) {
       //Else, the request is live and we marked it as popped
       else {
         bot->setPosition(request->nextPla,request->board,request->hist);
+        if(request->hasRegionBounds)
+          bot->setAnalysisBounds(request->regionBounds);
+        else
+          bot->clearAnalysisBounds();
         bot->setAlwaysIncludeOwnerMap(request->includeOwnership || request->includeOwnershipStdev || request->includeMovesOwnership || request->includeMovesOwnershipStdev);
         bot->setParams(request->params);
         bot->setAvoidMoveUntilByLoc(request->avoidMoveUntilByLocBlack,request->avoidMoveUntilByLocWhite);
