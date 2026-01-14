@@ -716,7 +716,7 @@ void Search::beginSearch(bool pondering) {
       rootNode->patternBonusHash = Hash128();
   }
 
-  if(searchParams.rootSymmetryPruning) {
+  if(searchParams.rootSymmetryPruning && !hasAnalysisBounds) {
     const std::vector<int>& avoidMoveUntilByLoc = rootPla == P_BLACK ? avoidMoveUntilByLocBlack : avoidMoveUntilByLocWhite;
     if(rootPruneOnlySymmetries.size() > 0)
       SymmetryHelpers::markDuplicateMoveLocs(rootBoard,rootHistory,&rootPruneOnlySymmetries,avoidMoveUntilByLoc,rootSymDupLoc,rootSymmetries);

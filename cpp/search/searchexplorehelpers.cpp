@@ -353,6 +353,11 @@ void Search::selectBestChildToDescend(
     float nnPolicyProb = policyProbs[movePos];
     if(nnPolicyProb < 0)
       continue;
+
+    if(hasAnalysisBounds && moveLoc != Board::PASS_LOC && !analysisBounds.contains(moveLoc, thread.board.x_size)) {
+      continue;
+    }
+
     policyProbMassVisited += nnPolicyProb;
 
     int64_t edgeVisits = childPointer.getEdgeVisits();
@@ -414,6 +419,11 @@ void Search::selectBestChildToDescend(
         float nnPolicyProb = policyProbs[movePos];
         if(nnPolicyProb < 0)
           continue;
+
+        if(hasAnalysisBounds && moveLoc != Board::PASS_LOC && !analysisBounds.contains(moveLoc, thread.board.x_size)) {
+          continue;
+        }
+
         policyProbMassVisited += nnPolicyProb;
       }
     }
@@ -469,6 +479,12 @@ void Search::selectBestChildToDescend(
     int64_t childEdgeVisits = childPointer.getEdgeVisits();
 
     Loc moveLoc = childPointer.getMoveLocRelaxed();
+
+    if(hasAnalysisBounds && moveLoc != Board::PASS_LOC && !analysisBounds.contains(moveLoc, thread.board.x_size)) {
+      posesWithChildBuf[getPos(moveLoc)] = true;
+      continue;
+    }
+
     bool isDuringSearch = true;
     double selectionValue = getExploreSelectionValueOfChild(
       node,policyProbs,child,
