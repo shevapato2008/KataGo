@@ -8,7 +8,7 @@
 - [x] Task: Write integration tests for the C++ analysis engine to verify localized move prediction on a 19x19 board. c2bdfb1
 - [x] Task: Conductor - User Manual Verification 'C++ Engine Implementation' (Protocol in workflow.md) c2bdfb1
 
-## Phase 2: Python API Integration
+## Phase 2: Python API Integration [checkpoint: 7fd4956]
 - [x] Task: Update the `MoveRequest` Pydantic model in `python/realtime_api/main.py` to include the optional `region_bounds` field. 154ab91
 - [x] Task: Modify `python/realtime_api/katago_wrapper.py` (or equivalent) to pass the bounds to the C++ engine query. 154ab91
 - [x] Task: Write failing integration tests in Python that call `/analyze` with `region_bounds` and expect localized moves. 7fb5c23
