@@ -1,7 +1,7 @@
 # Product Guide: KataGo Local Analysis
 
-## Initial Concept
-我们需要构建给定棋盘某个区域上的预测能力，可能katago目前已经支持这个功能，这点我并不确定。以一个具体的场景说明我刚才提到的需求。围棋里有很多局部问题，比如死活题、局部的腾挪、手筋等。以死活题为例，限定在棋盘某个区域（可能是角上也可能是边上）一方先行争取活棋或者杀掉对方。实际上就是划定某个长方形区域下围棋。也就是在局部预测最优解的问题。需要调研一下KataGo提供给远程访问的/analyze接口是否已经支持这个功能，如果不支持，需要开发这个功能。即客户端把死活棋相关的特定区域四角或者四边坐标传进来，/analyze api照常返回最优解。
+## Overview
+KataGo Local Analysis provides the capability to perform localized search and move prediction within a user-specified rectangular region. This allows for focused analysis of local Go problems such as tsumego, tesuji, and life-and-death situations, while still accounting for the global board state.
 
 ## Project Goal
 Enable KataGo to perform localized analysis and move prediction within a user-specified rectangular region of the Go board, treating it as a local problem (tsumego/tesuji) via the existing real-time API.
