@@ -13,7 +13,7 @@
 - [x] Task: Modify `python/realtime_api/katago_wrapper.py` (or equivalent) to pass the bounds to the C++ engine query. 154ab91
 - [x] Task: Write failing integration tests in Python that call `/analyze` with `region_bounds` and expect localized moves. 7fb5c23
 - [x] Task: Implement the passing of bounds and verify that the API returns the correct localized results. 7fb5c23
-- [ ] Task: Conductor - User Manual Verification 'Python API Integration' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Python API Integration' (Protocol in workflow.md) af9237c
 
 ## Phase 3: Final Verification and Documentation
 - [ ] Task: Perform a full regression test suite to ensure no impact on standard 19x19 analysis.
