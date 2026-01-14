@@ -1,6 +1,6 @@
 # Plan: Rectangular Region Constraint Implementation
 
-## Phase 1: C++ Engine Implementation
+## Phase 1: C++ Engine Implementation [checkpoint: 94962f8]
 - [x] Task: Define `AnalysisBounds` data structure and coordinate validation logic in C++. 81f94f5
 - [x] Task: Update the analysis query parser in `command/analysis.cpp` (or relevant file) to support the `regionBounds` field. d3f950b
 - [x] Task: Write unit tests in C++ to verify that `AnalysisBounds` correctly identifies points inside/outside the rectangle. 81f94f5
