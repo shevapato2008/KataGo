@@ -338,6 +338,10 @@ bool Search::isAllowedRootMove(Loc moveLoc) const {
     return false;
   }
 
+  if(hasAnalysisBounds && moveLoc != Board::PASS_LOC && !analysisBounds.contains(moveLoc, rootBoard.x_size)) {
+    return false;
+  }
+
   return true;
 }
 

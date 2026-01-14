@@ -45,6 +45,8 @@ class AsyncBot {
   void setPlayerIfNew(Player pla);
   void setKomiIfNew(float newKomi);
   void setRootHintLoc(Loc loc);
+  void setAnalysisBounds(AnalysisBounds bounds);
+  void clearAnalysisBounds();
   void setAvoidMoveUntilByLoc(const std::vector<int>& bVec, const std::vector<int>& wVec);
   void setAvoidMoveUntilRescaleRoot(bool b);
   void setAlwaysIncludeOwnerMap(bool b);

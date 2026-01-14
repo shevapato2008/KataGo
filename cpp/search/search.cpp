@@ -74,6 +74,8 @@ Search::Search(SearchParams params, NNEvaluator* nnEval, NNEvaluator* humanEval,
    rootHistory(),
    rootGraphHash(),
    rootHintLoc(Board::NULL_LOC),
+   hasAnalysisBounds(false),
+   analysisBounds(),
    avoidMoveUntilByLocBlack(),avoidMoveUntilByLocWhite(),avoidMoveUntilRescaleRoot(false),
    rootSymmetries(),
    rootPruneOnlySymmetries(),
@@ -182,6 +184,7 @@ void Search::setPosition(Player pla, const Board& board, const BoardHistory& his
   rootBoard = board;
   rootHistory = history;
   rootKoHashTable->recompute(rootHistory);
+  hasAnalysisBounds = false;
   avoidMoveUntilByLocBlack.clear();
   avoidMoveUntilByLocWhite.clear();
 }
@@ -236,6 +239,23 @@ void Search::setRootHintLoc(Loc loc) {
   if(loc != Board::NULL_LOC && rootHintLoc != loc)
     clearSearch();
   rootHintLoc = loc;
+}
+
+void Search::setAnalysisBounds(AnalysisBounds bounds) {
+  if(hasAnalysisBounds &&
+     analysisBounds.x1 == bounds.x1 && analysisBounds.y1 == bounds.y1 &&
+     analysisBounds.x2 == bounds.x2 && analysisBounds.y2 == bounds.y2)
+    return;
+  clearSearch();
+  hasAnalysisBounds = true;
+  analysisBounds = bounds;
+}
+
+void Search::clearAnalysisBounds() {
+  if(!hasAnalysisBounds)
+    return;
+  clearSearch();
+  hasAnalysisBounds = false;
 }
 
 void Search::setAlwaysIncludeOwnerMap(bool b) {

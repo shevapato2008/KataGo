@@ -88,6 +88,9 @@ struct Search {
   Hash128 rootGraphHash;
   Loc rootHintLoc;
 
+  bool hasAnalysisBounds;
+  AnalysisBounds analysisBounds;
+
   //External user-specified moves that are illegal or that should be nontrivially searched, and the number of turns for which they should
   //be excluded. Empty if not active, else of length MAX_ARR_SIZE and nonzero anywhere a move should be banned, for the number of ply
   //of depth that it should be banned.
@@ -224,6 +227,8 @@ struct Search {
   void setPlayerIfNew(Player pla);
   void setKomiIfNew(float newKomi); //Does not clear history, does clear search unless komi is equal.
   void setRootHintLoc(Loc hintLoc);
+  void setAnalysisBounds(AnalysisBounds bounds);
+  void clearAnalysisBounds();
   void setAvoidMoveUntilByLoc(const std::vector<int>& bVec, const std::vector<int>& wVec);
   void setAvoidMoveUntilRescaleRoot(bool b);
   void setAlwaysIncludeOwnerMap(bool b);

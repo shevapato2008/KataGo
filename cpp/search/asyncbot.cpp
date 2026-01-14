@@ -123,6 +123,14 @@ void AsyncBot::setRootHintLoc(Loc loc) {
   stopAndWait();
   search->setRootHintLoc(loc);
 }
+void AsyncBot::setAnalysisBounds(AnalysisBounds bounds) {
+  stopAndWait();
+  search->setAnalysisBounds(bounds);
+}
+void AsyncBot::clearAnalysisBounds() {
+  stopAndWait();
+  search->clearAnalysisBounds();
+}
 void AsyncBot::setAlwaysIncludeOwnerMap(bool b) {
   stopAndWait();
   search->setAlwaysIncludeOwnerMap(b);

@@ -515,6 +515,9 @@ void Search::selectBestChildToDescend(
         if(!isAllowedRootMove(moveLoc))
           continue;
       }
+      if(!isRoot && hasAnalysisBounds && moveLoc != Board::PASS_LOC && !analysisBounds.contains(moveLoc, thread.board.x_size)) {
+        continue;
+      }
       if(avoidMoveUntilByLoc.size() > 0) {
         assert(avoidMoveUntilByLoc.size() >= Board::MAX_ARR_SIZE);
         int untilDepth = avoidMoveUntilByLoc[moveLoc];
@@ -567,6 +570,9 @@ void Search::selectBestChildToDescend(
       assert(thread.pla == rootPla);
       if(!isAllowedRootMove(moveLoc))
         continue;
+    }
+    if(!isRoot && hasAnalysisBounds && moveLoc != Board::PASS_LOC && !analysisBounds.contains(moveLoc, thread.board.x_size)) {
+      continue;
     }
     if(avoidMoveUntilByLoc.size() > 0) {
       assert(avoidMoveUntilByLoc.size() >= Board::MAX_ARR_SIZE);
