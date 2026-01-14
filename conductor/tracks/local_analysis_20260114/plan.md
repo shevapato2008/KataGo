@@ -9,10 +9,10 @@
 - [x] Task: Conductor - User Manual Verification 'C++ Engine Implementation' (Protocol in workflow.md) c2bdfb1
 
 ## Phase 2: Python API Integration
-- [ ] Task: Update the `MoveRequest` Pydantic model in `python/realtime_api/main.py` to include the optional `region_bounds` field.
-- [ ] Task: Modify `python/realtime_api/katago_wrapper.py` (or equivalent) to pass the bounds to the C++ engine query.
-- [ ] Task: Write failing integration tests in Python that call `/analyze` with `region_bounds` and expect localized moves.
-- [ ] Task: Implement the passing of bounds and verify that the API returns the correct localized results.
+- [x] Task: Update the `MoveRequest` Pydantic model in `python/realtime_api/main.py` to include the optional `region_bounds` field. 154ab91
+- [x] Task: Modify `python/realtime_api/katago_wrapper.py` (or equivalent) to pass the bounds to the C++ engine query. 154ab91
+- [x] Task: Write failing integration tests in Python that call `/analyze` with `region_bounds` and expect localized moves. 7fb5c23
+- [x] Task: Implement the passing of bounds and verify that the API returns the correct localized results. 7fb5c23
 - [ ] Task: Conductor - User Manual Verification 'Python API Integration' (Protocol in workflow.md)
 
 ## Phase 3: Final Verification and Documentation
