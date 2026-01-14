@@ -47,6 +47,7 @@ namespace PlayerIO {
 //Location of a point on the board
 //(x,y) is represented as (x+1) + (y+1)*(x_size+1)
 typedef short Loc;
+
 namespace Location
 {
   Loc getLoc(int x, int y, int x_size);
@@ -81,6 +82,17 @@ namespace Location
 
   std::vector<Loc> parseSequence(const std::string& str, const Board& b);
 }
+
+//Bounds for analysis, defining a rectangular region (x1,y1) to (x2,y2) inclusive.
+struct AnalysisBounds {
+  int x1, y1, x2, y2;
+  bool contains(int x, int y) const {
+    return x >= x1 && x <= x2 && y >= y1 && y <= y2;
+  }
+  bool contains(Loc loc, int xSize) const {
+    return contains(Location::getX(loc, xSize), Location::getY(loc, xSize));
+  }
+};
 
 //Simple structure for storing moves. Not used below, but this is a convenient place to define it.
 STRUCT_NAMED_PAIR(Loc,loc,Player,pla,Move);

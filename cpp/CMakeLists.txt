@@ -277,6 +277,7 @@ add_executable(katago
   program/selfplaymanager.cpp
   ${GIT_HEADER_FILE_ALWAYS_UPDATED}
   tests/testboardarea.cpp
+  tests/testanalysisbounds.cpp
   tests/testboardbasic.cpp
   tests/testbook.cpp
   tests/testcommon.cpp

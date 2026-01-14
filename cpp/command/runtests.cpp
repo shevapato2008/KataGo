@@ -42,6 +42,7 @@ int MainCmds::runtests(const vector<string>& args) {
   Tests::runBoardBasicTests();
 
   Tests::runBoardAreaTests();
+  Tests::runAnalysisBoundsTests();
 
   Tests::runRulesTests();
 
