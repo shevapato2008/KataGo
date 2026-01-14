@@ -1,0 +1,9 @@
+katago:
+  path: "/Users/fan/Repositories/KataGo/cpp/katago"
+  config_path: "/Users/fan/Repositories/KataGo/cpp/configs/analysis_example.cfg"
+  model:
+    path: "/Users/fan/Repositories/KataGo/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz"
+api:
+  host: "127.0.0.1"
+  port: 8000
+  reload: false
