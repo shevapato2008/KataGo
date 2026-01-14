@@ -1,0 +1,8 @@
+{
+  "track_id": "local_analysis_20260114",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-01-14T12:00:00Z",
+  "updated_at": "2026-01-14T12:00:00Z",
+  "description": "Implement rectangular region constraint in the KataGo search engine and expose it via the /analyze API."
+}
