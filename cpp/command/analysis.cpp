@@ -44,6 +44,9 @@ struct AnalyzeRequest {
   vector<int> avoidMoveUntilByLocBlack;
   vector<int> avoidMoveUntilByLocWhite;
 
+  AnalysisBounds regionBounds;
+  bool hasRegionBounds;
+
   //Starts with STATUS_IN_QUEUE.
   //Thread that grabs it from queue it changes it to STATUS_POPPED
   //Once search is fully started thread sticks in its own thread index
@@ -627,6 +630,7 @@ int MainCmds::analysis(const vector<string>& args) {
       rbase.reportDuringSearchEvery = 1e30;
       rbase.firstReportDuringSearchAfter = 1e30;
       rbase.priority = 0;
+      rbase.hasRegionBounds = false;
       rbase.avoidMoveUntilByLocBlack.clear();
       rbase.avoidMoveUntilByLocWhite.clear();
 
@@ -816,6 +820,27 @@ int MainCmds::analysis(const vector<string>& args) {
         bool suc = parsePlayer(input, "initialPlayer", initialPlayer);
         if(!suc)
           continue;
+      }
+
+      if(input.find("regionBounds") != input.end()) {
+        const json& rb = input["regionBounds"];
+        if(!rb.is_object()) {
+          reportErrorForId(rbase.id, "regionBounds", "Must be an object with x1, y1, x2, y2 fields");
+          continue;
+        }
+        int64_t x1, y1, x2, y2;
+        bool s = true;
+        s &= parseInteger(rb, "x1", x1, 0, boardXSize-1, "Must be an integer coordinate");
+        s &= parseInteger(rb, "y1", y1, 0, boardYSize-1, "Must be an integer coordinate");
+        s &= parseInteger(rb, "x2", x2, 0, boardXSize-1, "Must be an integer coordinate");
+        s &= parseInteger(rb, "y2", y2, 0, boardYSize-1, "Must be an integer coordinate");
+        if(!s) continue;
+        if(x1 > x2 || y1 > y2) {
+          reportErrorForId(rbase.id, "regionBounds", "x1 must be <= x2 and y1 must be <= y2");
+          continue;
+        }
+        rbase.regionBounds = {(int)x1, (int)y1, (int)x2, (int)y2};
+        rbase.hasRegionBounds = true;
       }
 
       vector<bool> shouldAnalyze(moveHistory.size()+1,false);
@@ -1188,6 +1213,8 @@ int MainCmds::analysis(const vector<string>& args) {
           newRequest->priority = priority;
           newRequest->avoidMoveUntilByLocBlack = rbase.avoidMoveUntilByLocBlack;
           newRequest->avoidMoveUntilByLocWhite = rbase.avoidMoveUntilByLocWhite;
+          newRequest->regionBounds = rbase.regionBounds;
+          newRequest->hasRegionBounds = rbase.hasRegionBounds;
           newRequest->status.store(AnalyzeRequest::STATUS_IN_QUEUE,std::memory_order_release);
           newRequests.push_back(newRequest);
         }
