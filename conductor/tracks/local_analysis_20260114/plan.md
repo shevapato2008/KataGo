@@ -16,6 +16,6 @@
 - [x] Task: Conductor - User Manual Verification 'Python API Integration' (Protocol in workflow.md) af9237c
 
 ## Phase 3: Final Verification and Documentation
-- [ ] Task: Perform a full regression test suite to ensure no impact on standard 19x19 analysis.
-- [ ] Task: Update API documentation (if any) to reflect the new `region_bounds` parameter.
-- [ ] Task: Conductor - User Manual Verification 'Final Verification and Documentation' (Protocol in workflow.md)
+- [x] Task: Perform a full regression test suite to ensure no impact on standard 19x19 analysis. 2ac5d1d
+- [x] Task: Update API documentation (if any) to reflect the new `region_bounds` parameter. bd26700
+- [x] Task: Conductor - User Manual Verification 'Final Verification and Documentation' (Protocol in workflow.md) bd26700
