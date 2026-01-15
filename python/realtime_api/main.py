@@ -139,7 +139,6 @@ async def health():
         "has_human_model": katago_wrapper.has_human_model
     }
 
-
 async def _ensure_models_available(config: AppConfig) -> None:
     await _ensure_single_model(config.katago.model, "Main model")
     if config.katago.human_model:
@@ -174,42 +173,61 @@ async def _ensure_single_model(model: "ModelConfig", label: str) -> None:
     except Exception as e:
         logger.error("Failed to download %s: %s", label, e)
 
-
-def _download_model(url: str, dest_path: str, expected_sha: Optional[str]) -> None:
+def _download_model(url: str, dest_path: str, expected_sha: Optional[str], retries: int = 10) -> None:
     dest_dir = os.path.dirname(dest_path)
     if dest_dir:
         os.makedirs(dest_dir, exist_ok=True)
     tmp_path = f"{dest_path}.tmp"
-    hasher = hashlib.sha256()
-    try:
-        with urllib.request.urlopen(url) as response, open(tmp_path, "wb") as handle:
-            total_bytes = _get_content_length(response)
-            bytes_read = 0
-            last_update = 0.0
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                handle.write(chunk)
-                hasher.update(chunk)
-                bytes_read += len(chunk)
-                last_update = _print_progress(bytes_read, total_bytes, last_update)
-            _print_progress(bytes_read, total_bytes, last_update, force=True)
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-        if expected_sha:
-            actual_sha = hasher.hexdigest().lower()
-            if actual_sha != expected_sha:
-                raise ValueError(
-                    "Model checksum mismatch: expected %s, got %s" % (expected_sha, actual_sha)
-                )
-            logger.info("Model checksum verified after download.")
-        os.replace(tmp_path, dest_path)
-    except Exception:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        raise
+    
+    last_error = None
+    
+    for attempt in range(retries):
+        hasher = hashlib.sha256()
+        try:
+            if attempt > 0:
+                logger.info(f"Downloading {url} (Attempt {attempt + 1}/{retries})")
+            
+            # Set a reasonable timeout (e.g., 30 seconds for connection)
+            with urllib.request.urlopen(url, timeout=60) as response, open(tmp_path, "wb") as handle:
+                total_bytes = _get_content_length(response)
+                bytes_read = 0
+                last_update = 0.0
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    hasher.update(chunk)
+                    bytes_read += len(chunk)
+                    last_update = _print_progress(bytes_read, total_bytes, last_update)
+                _print_progress(bytes_read, total_bytes, last_update, force=True)
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+            
+            if expected_sha:
+                actual_sha = hasher.hexdigest().lower()
+                if actual_sha != expected_sha:
+                    raise ValueError(
+                        "Model checksum mismatch: expected %s, got %s" % (expected_sha, actual_sha)
+                    )
+                logger.info("Model checksum verified after download.")
+            
+            os.replace(tmp_path, dest_path)
+            return  # Success
 
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Download attempt {attempt + 1} failed: {e}")
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            
+            if attempt < retries - 1:
+                sleep_time = 2 ** attempt  # Exponential backoff
+                logger.info(f"Retrying in {sleep_time} seconds...")
+                time.sleep(sleep_time)
+
+    # If we get here, all retries failed
+    raise last_error
 
 def _verify_model_checksum(path: str, expected_sha: str) -> bool:
     logger.info("Verifying model checksum for %s", path)
@@ -227,12 +245,10 @@ def _verify_model_checksum(path: str, expected_sha: str) -> bool:
     logger.info("Model checksum verified for %s", path)
     return True
 
-
 def _normalize_sha256(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
     return value.strip().lower()
-
 
 def _get_content_length(response: urllib.request.addinfourl) -> Optional[int]:
     header = response.getheader("Content-Length")
@@ -242,7 +258,6 @@ def _get_content_length(response: urllib.request.addinfourl) -> Optional[int]:
         return int(header)
     except ValueError:
         return None
-
 
 def _print_progress(
     bytes_read: int, total_bytes: Optional[int], last_update: float, force: bool = False
