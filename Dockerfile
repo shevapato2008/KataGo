@@ -33,6 +33,15 @@ RUN cmake . -DUSE_BACKEND=TENSORRT -DNO_GIT_REVISION=1 && \
 WORKDIR /app
 RUN mkdir -p /app/models
 
+# Download models during build if they are not present, to speed up container startup.
+ARG MODEL_BASE_URL=https://go.sailorvoyage.top/docs
+RUN if [ -z "$(ls -A /app/models)" ]; then \
+    apt-get update && apt-get install -y wget && \
+    wget -q ${MODEL_BASE_URL}/b18c384nbt-humanv0.bin.gz -O /app/models/b18c384nbt-humanv0.bin.gz && \
+    wget -q ${MODEL_BASE_URL}/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz -O /app/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz && \
+    apt-get purge -y wget && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 ENV PYTHONPATH=/app/python
 ENV KATAGO_CONFIG_FILE=/app/config.yaml
 EXPOSE 8000

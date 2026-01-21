@@ -152,6 +152,23 @@ ninja
 ```
 
 ### Building with Docker
+
+#### Fast Build (Internal Mirror)
+If you are building the image on a machine that already has the model files (e.g., your home server) or you want to use a specific mirror to avoid slow downloads from GitHub/Official sites, you can use the `MODEL_BASE_URL` build argument.
+
+**1. Ultra-Fast Local Build:**
+If you have an HTTP server (like Nginx) running on your host machine serving the models (e.g., at `/docs/`), use the Docker bridge IP (`172.17.0.1`) to download at local disk speeds:
+```bash
+docker build --build-arg MODEL_BASE_URL=http://172.17.0.1/docs -t katago-trt .
+```
+
+**2. Using a Custom Mirror:**
+If you have a stable public mirror (like `https://go.sailorvoyage.top/docs`), use it to ensure reliability:
+```bash
+docker build --build-arg MODEL_BASE_URL=https://go.sailorvoyage.top/docs -f Dockerfile.rk3588 -t katago-rk3588 .
+```
+
+*Note: The build process only downloads the models if the `/app/models` directory is empty. If you have already placed the models in your local `models/` folder, they will be copied via the `COPY` command and the download step will be skipped.*
 KataGo includes a `Dockerfile` for building a containerized version, which is especially useful for avoiding dependency hell (like TensorRT version mismatches). The container builds the TensorRT backend and starts the real-time API by default.
 
 1. **Build the Image:**
