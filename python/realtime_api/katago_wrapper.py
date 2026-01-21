@@ -69,7 +69,7 @@ class KataGoWrapper:
             )
             # INCREASE BUFFER LIMIT for stdout to support large analysis payloads
             if self.process.stdout:
-                self.process.stdout._limit = 200 * 1024  # 200KB limit
+                self.process.stdout._limit = 256 * 1024  # 256KB limit
 
             self.running = True
             self.read_task = asyncio.create_task(self._read_loop())
