@@ -204,6 +204,46 @@ KataGo includes a `Dockerfile` for building a containerized version, which is es
        -config /app/cpp/configs/analysis_example.cfg
    ```
 
+#### Multi-GPU Setup
+If you have multiple GPUs and want to run separate KataGo services on each GPU, you can specify which GPU each container uses via the `--gpus` device flag and map different ports.
+
+**Example: Running two services on two GPUs (e.g., dual RTX 3090):**
+```bash
+# Build the image once
+docker build -t katago-trt .
+
+# Container 1: Use GPU 0, expose on port 8000
+docker run -d --gpus '"device=0"' -p 8000:8000 --name katago-gpu0 katago-trt
+
+# Container 2: Use GPU 1, expose on port 8002
+docker run -d --gpus '"device=1"' -p 8002:8000 --name katago-gpu1 katago-trt
+```
+
+*Note: The `-p 8002:8000` format means `<host_port>:<container_port>`. Both containers run on port 8000 internally, but are exposed on different host ports (8000 and 8002) to avoid conflicts.*
+
+**Verify and monitor:**
+```bash
+# Check container status
+docker ps
+
+# Check logs for each container
+docker logs -f katago-gpu0
+docker logs -f katago-gpu1
+
+# Test each endpoint
+curl http://localhost:8000/health
+curl http://localhost:8002/health
+
+# Monitor GPU usage
+nvidia-smi -l 1
+```
+
+**Stop the containers:**
+```bash
+docker stop katago-gpu0 katago-gpu1
+docker rm katago-gpu0 katago-gpu1
+```
+
 #### ARM64 / RK3588 Optimization
 For ARM64 devices with limited RAM (like the Rockchip RK3588), a specialized `Dockerfile.rk3588` is provided. It uses the Eigen (CPU) backend and reduces build parallelism to avoid memory exhaustion during compilation.
 
