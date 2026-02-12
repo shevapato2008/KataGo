@@ -94,30 +94,35 @@ class KataGoWrapper:
                 future.cancel()
         self.pending_requests.clear()
 
-    async def query(self, query_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def query(self, query_data: Dict[str, Any], timeout: float = 600.0) -> Dict[str, Any]:
         if not self.process or self.process.returncode is not None:
             # If process crashed or hasn't started, try to start it
             await self.start()
-        
+
         query_id = query_data.get('id')
         if not query_id:
             query_id = str(uuid.uuid4())
             query_data['id'] = query_id
-        
+
         future = asyncio.get_running_loop().create_future()
         self.pending_requests[query_id] = future
-        
+
         # Filter out fields that KataGo C++ engine does not understand
         safe_query_data = {
-            k: v for k, v in query_data.items() 
+            k: v for k, v in query_data.items()
             if k not in ('gameId', 'userId')
         }
-        
+
         try:
             json_str = json.dumps(safe_query_data) + '\n'
             self.process.stdin.write(json_str.encode())
             await self.process.stdin.drain()
-            return await future
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f"Query {query_id} timed out after {timeout}s")
+            if query_id in self.pending_requests:
+                del self.pending_requests[query_id]
+            raise TimeoutError(f"KataGo query timed out after {timeout}s")
         except Exception as e:
             if query_id in self.pending_requests:
                 del self.pending_requests[query_id]

@@ -88,12 +88,13 @@ class MoveRequest(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     gameId: Optional[str] = None
     userId: Optional[str] = None
-    moves: List[Tuple[str, str]] = [] 
+    moves: List[Tuple[str, str]] = []
     initialStones: List[Tuple[str, str]] = []
     rules: str = "Chinese"
     komi: float = 7.5
     boardXSize: int = 19
     boardYSize: int = 19
+    analyzeTurns: Optional[List[int]] = None
     regionBounds: Optional[RegionBounds] = None
     includePolicy: bool = True
     includeOwnership: bool = False
