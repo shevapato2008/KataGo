@@ -265,3 +265,47 @@ ls -al /boot 2>/dev/null || true
 
 [1]: https://github.com/Joshua-Riek/ubuntu-rockchip/wiki/Ubuntu-24.04-LTS?utm_source=chatgpt.com "Ubuntu 24.04 LTS · Joshua-Riek/ubuntu-rockchip Wiki"
 [2]: https://www.armbian.com/soc/rk3588/?utm_source=chatgpt.com "SoC: RK3588"
+
+
+---
+
+# 3. 编译优化：OpenCL (Mali-G610 GPU) vs Eigen (CPU)
+
+> 详细 benchmark 数据见 `docs/rk3588-compiling-optimization/benchmark-results.md`
+
+## 测试结论
+
+**OpenCL 后端比 Eigen 快 ~3x**，在 b28c512 模型上：
+
+| 后端 | 最佳 visits/s | 推荐线程数 |
+|------|-------------|-----------|
+| **OpenCL (Mali-G610)** | **4.97** | 8-12 |
+| Eigen (CPU) | 1.62 | 5-6 |
+
+## 推荐部署方案
+
+使用 `Dockerfile.rk3588-opencl` 构建 OpenCL 版本：
+
+```bash
+# 构建
+docker build -t katago-rk3588-opencl -f Dockerfile.rk3588-opencl .
+
+# 运行（必须挂载 GPU 设备和 Mali 驱动）
+docker run --device /dev/mali0 \
+    -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
+    -v /etc/OpenCL:/etc/OpenCL:ro \
+    -v katago-opencl-cache:/root/.katago \
+    -p 8000:8000 \
+    katago-rk3588-opencl
+```
+
+### 关键注意事项
+
+1. **首次运行自动调优**：第一次启动会花 ~10 分钟调优 OpenCL 内核参数，之后缓存在 `~/.katago/`
+2. **GPU 访问权限**：运行容器的用户需要在 `video` 组中，或使用 `--device /dev/mali0`
+3. **FP16 不可用**：Mali-G610 不支持 WMMA，需设置 `openclUseFP16=false`
+4. **推荐 `numSearchThreads=8-12`**：更多线程 → 更大批量 → 更高 GPU 利用率
+
+### 如果 OpenCL 不可用（Fallback）
+
+使用现有 `Dockerfile.rk3588` (Eigen 后端)，推荐 `numSearchThreads=5-6`。

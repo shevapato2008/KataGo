@@ -1,0 +1,40 @@
+=== Board Identity ===
+Model: Rockchip RK3588 DXB LP4 V10 Board
+Compatible: rockchip,rk3588-dxb-lvds-v10 rockchip,rk3588
+
+=== System Info ===
+Linux teamhd 5.10.198 #142 SMP Wed Dec 11 17:43:34 CST 2024 aarch64
+Ubuntu 20.04.6 LTS (Focal Fossa)
+
+=== CPU Info ===
+Architecture: aarch64
+CPU(s): 8 (4x Cortex-A76 + 4x Cortex-A55)
+CPU max MHz: 2256.0000
+CPU min MHz: 408.0000
+
+=== GPU Info (clinfo) ===
+Platform: ARM Platform, OpenCL 3.0
+Device: Mali-G610 r0p0
+Device Type: GPU
+Max compute units: 4
+Max clock frequency: 1000MHz
+Max work group size: 1024
+Max work item sizes: 1024x1024x1024
+Global memory: 8297172992 (7.727GiB) — Unified with CPU
+Local memory: 32768 (32KiB) — Global type
+FP16 support: Yes (cl_khr_fp16)
+FP64 support: No
+
+Driver: libmali-valhall-g610-g13p0-x11-gbm v1.9-1
+arm_release_ver: g13p0-01eac0, rk_so_ver: 9
+
+=== Key Extensions ===
+cl_khr_fp16
+cl_khr_integer_dot_product
+cl_arm_integer_dot_product_int8
+cl_khr_subgroups
+cl_khr_il_program (SPIR-V_1.0)
+
+=== Access Notes ===
+/dev/mali0: crw-rw---- root:video
+User must be in 'video' group to access GPU.
