@@ -1,3 +1,14 @@
+# Dockerfile.rk3588-eigen
+# KataGo with Eigen (CPU) backend for RK3588
+# Fallback when Mali-G610 GPU / OpenCL driver is unavailable
+# ~1.6 visits/s on b28c512 model (vs ~5 visits/s with OpenCL)
+#
+# Build:
+#   docker build -t katago-rk3588-eigen -f Dockerfile.rk3588-eigen .
+#
+# Run:
+#   docker run -d -p 8000:8000 katago-rk3588-eigen
+
 # Stage 1: Builder
 FROM ubuntu:22.04 AS builder
 

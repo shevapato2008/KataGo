@@ -51,8 +51,8 @@ docker run --device /dev/mali0 \
 
 ### Eigen 版本 (Fallback)
 ```bash
-docker build -t katago-rk3588 -f Dockerfile.rk3588 .
-docker run -p 8000:8000 katago-rk3588
+docker build -t katago-rk3588-eigen -f Dockerfile.rk3588-eigen .
+docker run -p 8000:8000 katago-rk3588-eigen
 ```
 
 ## 散热与持续性能
@@ -68,7 +68,7 @@ docker run -p 8000:8000 katago-rk3588
 | 文件 | 用途 |
 |------|------|
 | `Dockerfile.rk3588-opencl` | OpenCL 版本 Docker 构建文件 |
-| `Dockerfile.rk3588` | Eigen 版本 Docker 构建文件 (fallback) |
+| `Dockerfile.rk3588-eigen` | Eigen 版本 Docker 构建文件 (fallback) |
 | `docs/rk3588-compiling-optimization/hardware-info.txt` | RK3588 硬件信息采集 |
 | `docs/rk3588-compiling-optimization/benchmark-results.md` | 详细 benchmark 对比数据 |
 | `docs/rk3588-compiling-optimization/SUMMARY.md` | 本文件 |

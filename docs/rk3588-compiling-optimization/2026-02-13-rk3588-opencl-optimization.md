@@ -14,7 +14,7 @@
 
 ### 当前状况
 - RK3588 板卡 (D-3588, 亮钻科技) 使用 Eigen CPU 后端运行 KataGo
-- 现有 `Dockerfile.rk3588` 使用 `-DUSE_BACKEND=EIGEN -march=armv8-a+crypto -mtune=cortex-a76`
+- 现有 `Dockerfile.rk3588-eigen` 使用 `-DUSE_BACKEND=EIGEN -march=armv8-a+crypto -mtune=cortex-a76`
 - 用户反馈"运行很慢"
 
 ### RK3588 硬件
@@ -40,7 +40,7 @@
 - OpenCL 设备发现: `cpp/neuralnet/openclhelpers.cpp:346-448`
 - OpenCL 自动调优: `cpp/neuralnet/opencltuner.cpp`（`autoTuneEverything` 函数）
 - FP16 支持检测: `cpp/neuralnet/openclhelpers.cpp:448`
-- 现有 RK3588 Dockerfile: `Dockerfile.rk3588:36-39`
+- 现有 RK3588 Dockerfile: `Dockerfile.rk3588-eigen:36-39`
 
 ---
 
@@ -363,7 +363,7 @@ git commit -m "docs: add RK3588 Eigen vs OpenCL benchmark results"
 
 **Files:**
 - Create: `Dockerfile.rk3588-opencl`
-- Reference: `Dockerfile.rk3588` (现有 Eigen 版本)
+- Reference: `Dockerfile.rk3588-eigen` (现有 Eigen 版本)
 
 **Step 1: 编写 OpenCL Dockerfile**
 
@@ -506,13 +506,13 @@ git commit -m "feat: add RK3588 OpenCL (Mali-G610) Dockerfile"
 **如果 OpenCL 方案因驱动问题失败或性能不如预期，专注优化 Eigen 方案。**
 
 **Files:**
-- Modify: `Dockerfile.rk3588`
+- Modify: `Dockerfile.rk3588-eigen`
 - Modify: `cpp/configs/server_analysis.cfg` (或创建 RK3588 专用配置)
 
 **Step 1: 优化编译参数**
 
 ```bash
-# 在 Dockerfile.rk3588 中，把 -O2 (默认) 升级到 -O3
+# 在 Dockerfile.rk3588-eigen 中，把 -O2 (默认) 升级到 -O3
 cmake . -DUSE_BACKEND=EIGEN -DNO_GIT_REVISION=1 \
     -DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=cortex-a76 -O3 -fsigned-char"
 ```
@@ -545,9 +545,9 @@ numAnalysisThreads = 1
 ponderingEnabled = false
 ```
 
-**Step 3: 更新 Dockerfile.rk3588 编译优化**
+**Step 3: 更新 Dockerfile.rk3588-eigen 编译优化**
 
-修改 `Dockerfile.rk3588:37-39`，添加 `-O3`：
+修改 `Dockerfile.rk3588-eigen:37-39`，添加 `-O3`：
 
 ```dockerfile
 RUN cmake . -DUSE_BACKEND=EIGEN -DNO_GIT_REVISION=1 \
@@ -566,7 +566,7 @@ RUN cmake . -DUSE_BACKEND=EIGEN -DNO_GIT_REVISION=1 \
 **Step 5: Commit**
 
 ```bash
-git add Dockerfile.rk3588 cpp/configs/rk3588_analysis.cfg
+git add Dockerfile.rk3588-eigen cpp/configs/rk3588_analysis.cfg
 git commit -m "perf: optimize RK3588 Eigen build with -O3 and dedicated config"
 ```
 

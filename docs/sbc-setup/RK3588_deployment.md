@@ -308,4 +308,4 @@ docker run --device /dev/mali0 \
 
 ### 如果 OpenCL 不可用（Fallback）
 
-使用现有 `Dockerfile.rk3588` (Eigen 后端)，推荐 `numSearchThreads=5-6`。
+使用 `Dockerfile.rk3588-eigen` (Eigen 后端)，推荐 `numSearchThreads=5-6`。

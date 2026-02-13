@@ -165,7 +165,7 @@ docker build --build-arg MODEL_BASE_URL=http://172.17.0.1/docs -t katago-trt .
 **2. Using a Custom Mirror:**
 If you have a stable public mirror (like `https://go.sailorvoyage.top/docs`), use it to ensure reliability:
 ```bash
-docker build --build-arg MODEL_BASE_URL=https://go.sailorvoyage.top/docs -f Dockerfile.rk3588 -t katago-rk3588 .
+docker build --build-arg MODEL_BASE_URL=https://go.sailorvoyage.top/docs -f Dockerfile.rk3588-eigen -t katago-rk3588-eigen .
 ```
 
 *Note: The build process only downloads the models if the `/app/models` directory is empty. If you have already placed the models in your local `models/` folder, they will be copied via the `COPY` command and the download step will be skipped.*
@@ -245,28 +245,112 @@ docker rm katago-gpu0 katago-gpu1
 ```
 
 #### ARM64 / RK3588 Optimization
-For ARM64 devices with limited RAM (like the Rockchip RK3588), a specialized `Dockerfile.rk3588` is provided. It uses the Eigen (CPU) backend and reduces build parallelism to avoid memory exhaustion during compilation.
+For the Rockchip RK3588 (4x Cortex-A76 + 4x Cortex-A55, Mali-G610 GPU), two specialized Dockerfiles are provided:
 
-1. **Build the Image:**
+| Backend | Dockerfile | Performance (b28c512) | Use Case |
+|---------|------------|----------------------|----------|
+| **OpenCL (Recommended)** | `Dockerfile.rk3588-opencl` | ~5 visits/s | Mali-G610 GPU available |
+| Eigen (Fallback) | `Dockerfile.rk3588-eigen` | ~1.6 visits/s | No GPU access |
+
+OpenCL is **~3x faster** than Eigen by offloading neural network inference to the Mali-G610 GPU. See `docs/rk3588-compiling-optimization/` for detailed benchmark data.
+
+Both Dockerfiles compile with `-DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=cortex-a76"`. These are CPU compiler flags that optimize the host-side C++ code (MCTS search, board logic, NN input preparation) for the Cortex-A76 big cores. For Eigen this is critical since all NN inference runs on CPU; for OpenCL it has minimal impact since the NN bottleneck is on the GPU, but is still good practice.
+
+**Option 1: OpenCL — Native (conda/venv)**
+
+1. **Build:**
    ```bash
-   docker build -f Dockerfile.rk3588 -t katago-rk3588 .
+   cd cpp
+   cmake . -DUSE_BACKEND=OPENCL -DNO_GIT_REVISION=1 \
+       -DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=cortex-a76"
+   make -j4
    ```
 
-2. **Run the Real-Time API:**
+2. **Pre-generate OpenCL tuning cache** (required on first use, ~10 min per model):
 
-   **Option A: Background Service (Recommended)**
-   Run in detached mode so it keeps running after you close the terminal.
+   Mali-G610 does not support WMMA instructions. When loading multiple models simultaneously (e.g., main + human model), auto-tuning the second model can crash during the hGemmWmma kernel compilation phase. **Run benchmark for each model individually first** to generate tuning caches:
    ```bash
-   docker run -d -p 8000:8000 --name katago-service --restart unless-stopped katago-rk3588
+   # Tune for main model (b28c512)
+   ./katago benchmark -model ../models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
+       -config configs/gtp_example.cfg
+
+   # Tune for human model (b18c384)
+   ./katago benchmark -model ../models/b18c384nbt-humanv0.bin.gz \
+       -config configs/gtp_example.cfg
+   ```
+   Tuning results are cached in `~/.katago/opencltuning/` and only need to be generated once per model.
+
+3. **Start the Real-Time API:**
+   ```bash
+   cd ..
+   PYTHONPATH=python python3 -m realtime_api.main
+   ```
+
+**Option 1: OpenCL — Docker**
+
+1. **Build:**
+   ```bash
+   docker build -f Dockerfile.rk3588-opencl -t katago-rk3588-opencl .
+   ```
+
+2. **Pre-generate OpenCL tuning cache** (required on first use):
+
+   The tuning must be done at runtime (not build time) because it requires GPU access via `/dev/mali0`. Run benchmark for each model before starting the service:
+   ```bash
+   # Tune for main model (b28c512)
+   docker run --rm --device /dev/mali0 \
+     -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
+     -v /etc/OpenCL:/etc/OpenCL:ro \
+     -v katago-opencl-cache:/root/.katago \
+     katago-rk3588-opencl \
+     ./cpp/katago benchmark \
+       -model /app/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
+       -config /app/cpp/configs/gtp_example.cfg
+
+   # Tune for human model (b18c384)
+   docker run --rm --device /dev/mali0 \
+     -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
+     -v /etc/OpenCL:/etc/OpenCL:ro \
+     -v katago-opencl-cache:/root/.katago \
+     katago-rk3588-opencl \
+     ./cpp/katago benchmark \
+       -model /app/models/b18c384nbt-humanv0.bin.gz \
+       -config /app/cpp/configs/gtp_example.cfg
+   ```
+   Tuning results are persisted in the `katago-opencl-cache` Docker volume and only need to be generated once per model.
+
+3. **Run the service:**
+   ```bash
+   docker run -d --device /dev/mali0 \
+     -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
+     -v /etc/OpenCL:/etc/OpenCL:ro \
+     -v katago-opencl-cache:/root/.katago \
+     -p 8000:8000 --name katago-service --restart unless-stopped \
+     katago-rk3588-opencl
    ```
    *   View logs: `docker logs -f katago-service`
-   *   Stop server: `docker stop katago-service`
+   *   Stop: `docker stop katago-service`
 
-   **Option B: Foreground (For Debugging)**
-   See output immediately to check for errors.
+**Option 2: Eigen (Fallback)**
+
+Use this if the Mali driver is unavailable (e.g., `/dev/mali0` not accessible in your environment). No tuning step needed.
+
+1. **Build:**
    ```bash
-   docker run -p 8000:8000 katago-rk3588
+   docker build -f Dockerfile.rk3588-eigen -t katago-rk3588-eigen .
    ```
+
+2. **Run:**
+   ```bash
+   docker run -d -p 8000:8000 --name katago-service --restart unless-stopped katago-rk3588-eigen
+   ```
+   *   View logs: `docker logs -f katago-service`
+   *   Stop: `docker stop katago-service`
+
+**Debugging (either backend):**
+```bash
+docker run -p 8000:8000 katago-rk3588-opencl  # or katago-rk3588-eigen
+```
 
 #### Docker Network Issues (Proxy Configuration)
 If you encounter network timeout errors (e.g., `Client.Timeout exceeded while awaiting headers`) when building the image, especially in regions with restricted network access to Docker Hub, you can configure a proxy or mirror.
