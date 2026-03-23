@@ -189,8 +189,9 @@ def _download_model(url: str, dest_path: str, expected_sha: Optional[str], retri
             if attempt > 0:
                 logger.info(f"Downloading {url} (Attempt {attempt + 1}/{retries})")
             
-            # Set a reasonable timeout (e.g., 30 seconds for connection)
-            with urllib.request.urlopen(url, timeout=60) as response, open(tmp_path, "wb") as handle:
+            # Some hosts (e.g. Google Cloud Storage) block Python-urllib User-Agent
+            req = urllib.request.Request(url, headers={"User-Agent": "KataGo/1.0"})
+            with urllib.request.urlopen(req, timeout=60) as response, open(tmp_path, "wb") as handle:
                 total_bytes = _get_content_length(response)
                 bytes_read = 0
                 last_update = 0.0
