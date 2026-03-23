@@ -1,13 +1,15 @@
-# Dockerfile.rk3588-eigen
-# KataGo with Eigen (CPU) backend for RK3588
-# Fallback when Mali-G610 GPU / OpenCL driver is unavailable
-# ~1.6 visits/s on b28c512 model (vs ~5 visits/s with OpenCL)
+# Dockerfile.sbc-opencl
+# KataGo with OpenCL backend for ARM64 SBCs (e.g. RK3588 Mali-G610, RK3562 Mali-G52)
+# ~3x faster than Eigen (CPU) backend when GPU is available
 #
 # Build:
-#   docker build -t katago-rk3588-eigen -f Dockerfile.rk3588-eigen .
+#   docker build -t katago-sbc-opencl -f Dockerfile.sbc-opencl .
 #
-# Run:
-#   docker run -d -p 8000:8000 katago-rk3588-eigen
+# Run (MUST mount GPU device and Mali driver):
+#   docker run --device /dev/mali0 \
+#     -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
+#     -v /etc/OpenCL:/etc/OpenCL:ro \
+#     -p 8000:8000 katago-sbc-opencl
 
 # Stage 1: Builder
 FROM ubuntu:22.04 AS builder
@@ -20,7 +22,7 @@ RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy main restr
     echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-backports main restricted universe multiverse" >> /etc/apt/sources.list && \
     echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
 
-# Install build dependencies
+# Install build dependencies (OpenCL headers + ICD loader for compilation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -28,7 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     libzip-dev \
     zlib1g-dev \
-    libeigen3-dev \
+    ocl-icd-opencl-dev \
+    opencl-headers \
     pkg-config \
     python3-dev \
     ca-certificates \
@@ -43,9 +46,8 @@ WORKDIR /app/cpp
 # Clean potential previous builds
 RUN rm -rf CMakeCache.txt CMakeFiles cmake_install.cmake Makefile katago
 
-# Configure and Build
-# Added ARM-specific optimizations for RK3588 (Cortex-A76/A55)
-RUN cmake . -DUSE_BACKEND=EIGEN -DNO_GIT_REVISION=1 \
+# Build with OpenCL backend + ARM optimizations (tune -mtune flag for your SBC's CPU)
+RUN cmake . -DUSE_BACKEND=OPENCL -DNO_GIT_REVISION=1 \
     -DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=cortex-a76" && \
     make -j2
 
@@ -61,7 +63,8 @@ RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy main restr
     echo "deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
 
 # Install runtime dependencies
-# libatomic1 is required for ARM atomic operations
+# ocl-icd-libopencl1: OpenCL ICD loader (dispatches to Mali driver at runtime)
+# libatomic1: required for ARM atomic operations
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
@@ -69,6 +72,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g \
     libssl3 \
     libatomic1 \
+    ocl-icd-libopencl1 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -77,6 +81,7 @@ WORKDIR /app
 # Copy python code and config
 COPY python /app/python
 COPY config.yaml /app/config.yaml
+COPY config.sbc.yaml /app/config.sbc.yaml
 COPY requirements-api.txt /app/
 
 # CRITICAL FIX: Copy config files needed by the real-time API
@@ -89,12 +94,13 @@ RUN python3 -m pip install --trusted-host pypi.tuna.tsinghua.edu.cn -i https://p
 # Copy KataGo binary from builder
 COPY --from=builder /app/cpp/katago /app/cpp/katago
 
-# Create models directory
+# Create models directory and copy b6c96 from source (used as main model in SBC mode)
 RUN mkdir -p /app/models
+COPY --from=builder /app/cpp/tests/models/g170-b6c96-s175395328-d26788732.bin.gz /app/models/
 
 # Download models during build if they are not present.
 ARG MODEL_BASE_URL=https://go.sailorvoyage.top/docs
-RUN if [ -z "$(ls -A /app/models)" ]; then \
+RUN if [ ! -f /app/models/b18c384nbt-humanv0.bin.gz ]; then \
     apt-get update && apt-get install -y wget && \
     wget -q ${MODEL_BASE_URL}/b18c384nbt-humanv0.bin.gz -O /app/models/b18c384nbt-humanv0.bin.gz && \
     wget -q ${MODEL_BASE_URL}/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz -O /app/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz && \
@@ -108,4 +114,15 @@ ENV PATH="/app/cpp:${PATH}"
 
 EXPOSE 8000
 
-CMD ["python3", "-m", "realtime_api.main"]
+# NOTE: Container MUST be run with GPU access:
+#   --device /dev/mali0
+#   -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro
+#   -v /etc/OpenCL:/etc/OpenCL:ro
+#
+# First run will auto-tune OpenCL kernels (~10 min), results are cached in ~/.katago/
+# To persist tuning cache across container restarts:
+#   -v katago-opencl-cache:/root/.katago
+
+# Default: server mode. Override with: docker run ... <image> python3 -m realtime_api.main --mode sbc
+ENTRYPOINT ["python3", "-m", "realtime_api.main"]
+CMD []
