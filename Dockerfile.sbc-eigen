@@ -89,12 +89,13 @@ RUN python3 -m pip install --trusted-host pypi.tuna.tsinghua.edu.cn -i https://p
 # Copy KataGo binary from builder
 COPY --from=builder /app/cpp/katago /app/cpp/katago
 
-# Create models directory
+# Create models directory and copy b6c96 from source (used as main model in SBC mode)
 RUN mkdir -p /app/models
+COPY --from=builder /app/cpp/tests/models/g170-b6c96-s175395328-d26788732.bin.gz /app/models/
 
 # Download models during build if they are not present.
 ARG MODEL_BASE_URL=https://go.sailorvoyage.top/docs
-RUN if [ -z "$(ls -A /app/models)" ]; then \
+RUN if [ ! -f /app/models/b18c384nbt-humanv0.bin.gz ]; then \
     apt-get update && apt-get install -y wget && \
     wget -q ${MODEL_BASE_URL}/b18c384nbt-humanv0.bin.gz -O /app/models/b18c384nbt-humanv0.bin.gz && \
     wget -q ${MODEL_BASE_URL}/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz -O /app/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz && \
