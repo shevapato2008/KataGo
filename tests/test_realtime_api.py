@@ -104,21 +104,29 @@ async def test_api_analyze_success():
             assert call_arg["id"] == "req_1"
             assert call_arg["moves"] == [("B", "Q4")]
 
-    @pytest.mark.asyncio
-    async def test_api_health_check_success():
-        with patch("realtime_api.main.katago_wrapper", new_callable=MagicMock) as mock_wrapper:
-            mock_wrapper.start = AsyncMock()
-            mock_wrapper.stop = AsyncMock()
-            mock_wrapper.process = MagicMock()
-            mock_wrapper.process.returncode = None
-            mock_wrapper.process.pid = 1234
-            mock_wrapper.has_human_model = False
-            
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get("/health")
-                assert response.status_code == 200
-                assert response.json() == {"status": "ok", "pid": 1234, "has_human_model": False}
+
+@pytest.mark.asyncio
+async def test_api_health_check_success():
+    mock_app_config = MagicMock()
+    mock_app_config.katago.model.path = "/models/test-model.bin.gz"
+    with patch("realtime_api.main.katago_wrapper", new_callable=MagicMock) as mock_wrapper, \
+         patch("realtime_api.main.app_config", mock_app_config):
+        mock_wrapper.start = AsyncMock()
+        mock_wrapper.stop = AsyncMock()
+        mock_wrapper.process = MagicMock()
+        mock_wrapper.process.returncode = None
+        mock_wrapper.process.pid = 1234
+        mock_wrapper.has_human_model = False
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/health")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "ok"
+            assert data["pid"] == 1234
+            assert data["has_human_model"] is False
+            assert data["model"] == "/models/test-model.bin.gz"
 @pytest.mark.asyncio
 async def test_api_health_check_failure():
     with patch("realtime_api.main.katago_wrapper", new_callable=MagicMock) as mock_wrapper:

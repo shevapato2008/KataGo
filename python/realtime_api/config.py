@@ -7,6 +7,12 @@ from pydantic import BaseModel, Field
 
 DEFAULT_CONFIG_NAME = "config.yaml"
 
+# Mapping from mode name to config file name
+MODE_CONFIG_MAP = {
+    "server": "config.yaml",
+    "sbc": "config.sbc.yaml",
+}
+
 
 class ModelConfig(BaseModel):
     path: str
@@ -38,6 +44,15 @@ class AppConfig(BaseModel):
 def get_default_config_path() -> str:
     repo_root = Path(__file__).resolve().parents[2]
     return str(repo_root / DEFAULT_CONFIG_NAME)
+
+
+def get_config_path_for_mode(mode: str) -> str:
+    config_name = MODE_CONFIG_MAP.get(mode)
+    if not config_name:
+        valid = ", ".join(sorted(MODE_CONFIG_MAP))
+        raise ValueError(f"Unknown mode '{mode}'. Valid modes: {valid}")
+    repo_root = Path(__file__).resolve().parents[2]
+    return str(repo_root / config_name)
 
 
 def load_config(path: Optional[str] = None) -> AppConfig:

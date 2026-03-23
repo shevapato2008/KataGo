@@ -1,15 +1,15 @@
-# Dockerfile.rk3588-opencl
-# KataGo with OpenCL backend for RK3588 (Mali-G610 GPU)
-# ~3x faster than Eigen (CPU) backend
+# Dockerfile.sbc-opencl
+# KataGo with OpenCL backend for ARM64 SBCs (e.g. RK3588 Mali-G610, RK3562 Mali-G52)
+# ~3x faster than Eigen (CPU) backend when GPU is available
 #
 # Build:
-#   docker build -t katago-rk3588-opencl -f Dockerfile.rk3588-opencl .
+#   docker build -t katago-sbc-opencl -f Dockerfile.sbc-opencl .
 #
 # Run (MUST mount GPU device and Mali driver):
 #   docker run --device /dev/mali0 \
 #     -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
 #     -v /etc/OpenCL:/etc/OpenCL:ro \
-#     -p 8000:8000 katago-rk3588-opencl
+#     -p 8000:8000 katago-sbc-opencl
 
 # Stage 1: Builder
 FROM ubuntu:22.04 AS builder
@@ -46,7 +46,7 @@ WORKDIR /app/cpp
 # Clean potential previous builds
 RUN rm -rf CMakeCache.txt CMakeFiles cmake_install.cmake Makefile katago
 
-# Build with OpenCL backend + ARM optimizations for RK3588 (Cortex-A76/A55)
+# Build with OpenCL backend + ARM optimizations (tune -mtune flag for your SBC's CPU)
 RUN cmake . -DUSE_BACKEND=OPENCL -DNO_GIT_REVISION=1 \
     -DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=cortex-a76" && \
     make -j2
@@ -81,6 +81,7 @@ WORKDIR /app
 # Copy python code and config
 COPY python /app/python
 COPY config.yaml /app/config.yaml
+COPY config.sbc.yaml /app/config.sbc.yaml
 COPY requirements-api.txt /app/
 
 # CRITICAL FIX: Copy config files needed by the real-time API
@@ -121,4 +122,6 @@ EXPOSE 8000
 # To persist tuning cache across container restarts:
 #   -v katago-opencl-cache:/root/.katago
 
-CMD ["python3", "-m", "realtime_api.main"]
+# Default: server mode. Override with: docker run ... <image> python3 -m realtime_api.main --mode sbc
+ENTRYPOINT ["python3", "-m", "realtime_api.main"]
+CMD []

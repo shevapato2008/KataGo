@@ -165,7 +165,7 @@ docker build --build-arg MODEL_BASE_URL=http://172.17.0.1/docs -t katago-trt .
 **2. Using a Custom Mirror:**
 If you have a stable public mirror (like `https://go.sailorvoyage.top/docs`), use it to ensure reliability:
 ```bash
-docker build --build-arg MODEL_BASE_URL=https://go.sailorvoyage.top/docs -f Dockerfile.rk3588-eigen -t katago-rk3588-eigen .
+docker build --build-arg MODEL_BASE_URL=https://go.sailorvoyage.top/docs -f Dockerfile.sbc-eigen -t katago-sbc-eigen .
 ```
 
 *Note: The build process only downloads the models if the `/app/models` directory is empty. If you have already placed the models in your local `models/` folder, they will be copied via the `COPY` command and the download step will be skipped.*
@@ -244,17 +244,17 @@ docker stop katago-gpu0 katago-gpu1
 docker rm katago-gpu0 katago-gpu1
 ```
 
-#### ARM64 / RK3588 Optimization
-For the Rockchip RK3588 (4x Cortex-A76 + 4x Cortex-A55, Mali-G610 GPU), two specialized Dockerfiles are provided:
+#### ARM64 / SBC Optimization
+For ARM64 single-board computers (e.g. RK3588, RK3562), two specialized Dockerfiles are provided:
 
 | Backend | Dockerfile | Performance (b28c512) | Use Case |
 |---------|------------|----------------------|----------|
-| **OpenCL (Recommended)** | `Dockerfile.rk3588-opencl` | ~5 visits/s | Mali-G610 GPU available |
-| Eigen (Fallback) | `Dockerfile.rk3588-eigen` | ~1.6 visits/s | No GPU access |
+| **OpenCL (Recommended)** | `Dockerfile.sbc-opencl` | GPU-accelerated | Mali GPU available |
+| Eigen (Fallback) | `Dockerfile.sbc-eigen` | CPU only | No GPU access |
 
-OpenCL is **~3x faster** than Eigen by offloading neural network inference to the Mali-G610 GPU. See `docs/rk3588-compiling-optimization/` for detailed benchmark data.
+OpenCL is significantly faster than Eigen by offloading neural network inference to the GPU. See `docs/rk3588-compiling-optimization/` for RK3588 benchmark data.
 
-Both Dockerfiles compile with `-DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=cortex-a76"`. These are CPU compiler flags that optimize the host-side C++ code (MCTS search, board logic, NN input preparation) for the Cortex-A76 big cores. For Eigen this is critical since all NN inference runs on CPU; for OpenCL it has minimal impact since the NN bottleneck is on the GPU, but is still good practice.
+Both Dockerfiles compile with `-DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=cortex-a76"` by default. Adjust the `-mtune` flag for your SBC's CPU (e.g. `cortex-a53` for RK3562). For Eigen this is critical since all NN inference runs on CPU; for OpenCL it has minimal impact since the NN bottleneck is on the GPU.
 
 **Option 1: OpenCL — Native (conda/venv)**
 
@@ -283,14 +283,18 @@ Both Dockerfiles compile with `-DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=c
 3. **Start the Real-Time API:**
    ```bash
    cd ..
+   # Server mode (default, full model)
    PYTHONPATH=python python3 -m realtime_api.main
+
+   # SBC mode (lightweight, b18c384 only, for 2GB RAM boards)
+   PYTHONPATH=python python3 -m realtime_api.main --mode sbc
    ```
 
 **Option 1: OpenCL — Docker**
 
 1. **Build:**
    ```bash
-   docker build -f Dockerfile.rk3588-opencl -t katago-rk3588-opencl .
+   docker build -f Dockerfile.sbc-opencl -t katago-sbc-opencl .
    ```
 
 2. **Pre-generate OpenCL tuning cache** (required on first use):
@@ -302,7 +306,7 @@ Both Dockerfiles compile with `-DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=c
      -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
      -v /etc/OpenCL:/etc/OpenCL:ro \
      -v katago-opencl-cache:/root/.katago \
-     katago-rk3588-opencl \
+     katago-sbc-opencl \
      ./cpp/katago benchmark \
        -model /app/models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz \
        -config /app/cpp/configs/gtp_example.cfg
@@ -312,7 +316,7 @@ Both Dockerfiles compile with `-DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=c
      -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
      -v /etc/OpenCL:/etc/OpenCL:ro \
      -v katago-opencl-cache:/root/.katago \
-     katago-rk3588-opencl \
+     katago-sbc-opencl \
      ./cpp/katago benchmark \
        -model /app/models/b18c384nbt-humanv0.bin.gz \
        -config /app/cpp/configs/gtp_example.cfg
@@ -321,12 +325,21 @@ Both Dockerfiles compile with `-DCMAKE_CXX_FLAGS="-march=armv8-a+crypto -mtune=c
 
 3. **Run the service:**
    ```bash
+   # Server mode (default, b28c512 + human model)
    docker run -d --device /dev/mali0 \
      -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
      -v /etc/OpenCL:/etc/OpenCL:ro \
      -v katago-opencl-cache:/root/.katago \
      -p 8000:8000 --name katago-service --restart unless-stopped \
-     katago-rk3588-opencl
+     katago-sbc-opencl
+
+   # SBC mode (b18c384 only, for memory-constrained boards like RK3562)
+   docker run -d --device /dev/mali0 \
+     -v /usr/lib/aarch64-linux-gnu/libmali.so.1:/usr/lib/aarch64-linux-gnu/libmali.so.1:ro \
+     -v /etc/OpenCL:/etc/OpenCL:ro \
+     -v katago-opencl-cache:/root/.katago \
+     -p 8000:8000 --name katago-service --restart unless-stopped \
+     katago-sbc-opencl --mode sbc
    ```
    *   View logs: `docker logs -f katago-service`
    *   Stop: `docker stop katago-service`
@@ -337,19 +350,23 @@ Use this if the Mali driver is unavailable (e.g., `/dev/mali0` not accessible in
 
 1. **Build:**
    ```bash
-   docker build -f Dockerfile.rk3588-eigen -t katago-rk3588-eigen .
+   docker build -f Dockerfile.sbc-eigen -t katago-sbc-eigen .
    ```
 
 2. **Run:**
    ```bash
-   docker run -d -p 8000:8000 --name katago-service --restart unless-stopped katago-rk3588-eigen
+   # Server mode (default)
+   docker run -d -p 8000:8000 --name katago-service --restart unless-stopped katago-sbc-eigen
+
+   # SBC mode (lightweight, for 2GB RAM boards)
+   docker run -d -p 8000:8000 --name katago-service --restart unless-stopped katago-sbc-eigen --mode sbc
    ```
    *   View logs: `docker logs -f katago-service`
    *   Stop: `docker stop katago-service`
 
 **Debugging (either backend):**
 ```bash
-docker run -p 8000:8000 katago-rk3588-opencl  # or katago-rk3588-eigen
+docker run -p 8000:8000 katago-sbc-opencl  # or katago-sbc-eigen
 ```
 
 #### Docker Network Issues (Proxy Configuration)
@@ -436,10 +453,32 @@ Edit `config.yaml` in the repo root to set the KataGo binary/config paths, model
 The default config points at the latest KataGo model URL and will auto-download it on first run if enabled.
 
 **2. Start the Service:**
+
+The API supports two launch modes via `--mode`:
+
+| Mode | Config | Model | Use Case |
+|------|--------|-------|----------|
+| `server` (default) | `config.yaml` | b28c512 + human model | GPU server, full analysis |
+| `sbc` | `config.sbc.yaml` | b18c384 only | SBC (2GB RAM), casual play |
+
 ```bash
-# From the project root
+# Server mode (default) — full model, for GPU servers
 PYTHONPATH=python python3 -m realtime_api.main
+
+# SBC mode — lightweight, for single-board computers (RK3562 etc.)
+PYTHONPATH=python python3 -m realtime_api.main --mode sbc
 ```
+
+For Docker deployments on ARM SBCs:
+```bash
+# Server mode (default)
+docker run -d -p 8000:8000 katago-sbc-opencl
+
+# SBC mode — pass --mode sbc as argument
+docker run -d -p 8000:8000 katago-sbc-opencl --mode sbc
+```
+
+See [docs/sbc-launch/SBC启动模式实现说明.md](docs/sbc-launch/SBC启动模式实现说明.md) for SBC memory optimization details.
 
 **3. Test:**
 ```bash

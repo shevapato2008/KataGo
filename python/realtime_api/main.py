@@ -12,7 +12,7 @@ from typing import List, Optional, Tuple
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from .config import AppConfig, get_default_config_path, load_config
+from .config import AppConfig, get_config_path_for_mode, get_default_config_path, load_config
 from .katago_wrapper import KataGoWrapper
 
 # Logging
@@ -135,9 +135,10 @@ async def health():
          raise HTTPException(status_code=503, detail=f"KataGo process exited with code {katago_wrapper.process.returncode}")
          
     return {
-        "status": "ok", 
+        "status": "ok",
         "pid": katago_wrapper.process.pid,
-        "has_human_model": katago_wrapper.has_human_model
+        "has_human_model": katago_wrapper.has_human_model,
+        "model": app_config.katago.model.path if app_config else None,
     }
 
 async def _ensure_models_available(config: AppConfig) -> None:
@@ -281,15 +282,37 @@ def _print_progress(
     return now
 
 if __name__ == "__main__":
+    import argparse
+
     import uvicorn
 
-    config_path = os.getenv("KATAGO_CONFIG_FILE") or get_default_config_path()
+    parser = argparse.ArgumentParser(description="KataGo Real-Time API")
+    parser.add_argument(
+        "--mode",
+        choices=["server", "sbc"],
+        default="server",
+        help="Launch mode: 'server' (default, full model) or 'sbc' (lightweight for SBC)",
+    )
+    args = parser.parse_args()
+
+    # Resolve config: KATAGO_CONFIG_FILE env → --mode flag → default (server)
+    env_config = os.getenv("KATAGO_CONFIG_FILE")
+    if env_config:
+        config_path = env_config
+        logger.info("Using config from KATAGO_CONFIG_FILE: %s", config_path)
+    else:
+        config_path = get_config_path_for_mode(args.mode)
+        logger.info("Launching in '%s' mode with config: %s", args.mode, config_path)
+
+    # Expose to lifespan via env so the forked uvicorn workers pick it up
+    os.environ["KATAGO_CONFIG_FILE"] = config_path
+
     try:
         runtime_config = load_config(config_path)
     except Exception as e:
         logger.error("Failed to load config from %s: %s", config_path, e)
         raise SystemExit(1)
-    
+
     # We use the import string "realtime_api.main:app" so that reload works
     uvicorn.run(
         "realtime_api.main:app",
