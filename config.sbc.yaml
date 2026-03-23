@@ -1,14 +1,21 @@
 katago:
   path: ./cpp/katago
   config_path: ./cpp/configs/rk3562_analysis.cfg
-  # Use standard b18c384 training model on SBC (b28c512 is too large for 2GB RAM).
-  # NOTE: Cannot use humanv0 model as main model — it requires humanSLProfile metadata.
+  # Main model: b6c96 is the lightest model (~3.8MB file, ~100MB RAM).
+  # It keeps KataGo running but actual play uses the human model below.
   model:
-    path: ./models/b18c384nbt-optimisticv13-s5971M.bin.gz
-    url: https://github.com/lightvector/KataGo/releases/download/v1.13.0/b18c384nbt-optimisticv13-s5971M.bin.gz
+    path: ./models/g170-b6c96-s175395328-d26788732.bin.gz
+    # This model ships with KataGo source at cpp/tests/models/
+    # Copy it to models/ or it will auto-download from the URL below.
+    url: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b6c96-s175395328-d26788732.bin.gz
+    auto_download: false
+    sha256: f5d32604e3675c480c7c8f6aa579a1ea857135628a0afccc8fa56330fbacd38d
+  # Human model: supports humanSLProfile for ranked play (e.g. preaz_5d, rank_3d)
+  human_model:
+    path: ./models/b18c384nbt-humanv0.bin.gz
+    url: https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz
     auto_download: true
-    sha256: 4714cddd467d29fba4cb52964f5d324fc208c0528953694a7bbe21a75b332d5d
-  # No human model on SBC — saves ~400MB memory
+    sha256: 637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5
   additional_args: []
   ld_library_paths: []
 
