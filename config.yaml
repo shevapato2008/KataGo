@@ -1,16 +1,28 @@
 katago:
   path: ./cpp/katago
   config_path: ./cpp/configs/server_analysis.cfg
-  model:
-    path: ./models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
-    url: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
-    auto_download: true
-    sha256: 798da8fe3e9819f09535240b1bc29cb3047a4fa981433c56c491e57007a3d3f0
-  human_model:
-    path: ./models/b18c384nbt-humanv0.bin.gz
-    url: https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz
-    auto_download: true
-    sha256: 637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5
+  models:
+    - name: b28
+      path: ./models/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
+      url: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-adam-s11165M-d5387M.bin.gz
+      auto_download: true
+      sha256: 798da8fe3e9819f09535240b1bc29cb3047a4fa981433c56c491e57007a3d3f0
+      human_model:
+        path: ./models/b18c384nbt-humanv0.bin.gz
+        url: https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz
+        auto_download: true
+        sha256: 637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5
+    - name: b18
+      path: ./models/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz
+      url: https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz
+      auto_download: true
+      sha256: 9d7a6afed8ff5b74894727e156f04f0cd36060a24824892008fbb6e0cba51f1d
+      human_model:
+        path: ./models/b18c384nbt-humanv0.bin.gz
+        url: https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz
+        auto_download: true
+        sha256: 637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5
+  default_model: b28
   additional_args: []
   ld_library_paths:
     - ./libs/TensorRT-8.6/lib
@@ -19,4 +31,4 @@ katago:
 api:
   host: 0.0.0.0
   port: 8000
-  reload: true
+  reload: false
