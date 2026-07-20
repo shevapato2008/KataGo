@@ -287,6 +287,9 @@ async def analyze(request: MoveRequest):
     except Exception as e:
         logger.error(f"Analysis failed (id={request.id}, model={name}): {e}")
         if wrapper.process and wrapper.process.returncode is not None:
+            # Process died mid-query. Lazily (re)trigger a guarded bring-up so recovery
+            # starts now instead of waiting for the next request's readiness check.
+            _schedule_bring_up(name)
             raise HTTPException(status_code=503, detail="KataGo engine process died")
         raise HTTPException(status_code=500, detail=str(e))
 

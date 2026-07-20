@@ -215,6 +215,31 @@ async def test_analyze_malformed_model_selector_returns_400(bad_value):
 
 
 @pytest.mark.asyncio
+async def test_analyze_process_death_midquery_schedules_recovery():
+    # If the subprocess dies DURING query(), the handler must 503 AND lazily trigger a
+    # guarded bring-up, so recovery starts immediately instead of waiting for the next
+    # request's readiness check to notice the dead process. The process is ALIVE at the
+    # readiness check (returncode None) and only dies inside query() — so this exercises
+    # the mid-query except branch, not the pre-query readiness branch.
+    b28 = _mock_wrapper({"id": "r"})  # returncode None → passes readiness check
+
+    async def _die_midquery(*args, **kwargs):
+        b28.process.returncode = 1  # observed dead after this failed query
+        raise RuntimeError("KataGo process terminated")
+    b28.query = AsyncMock(side_effect=_die_midquery)
+
+    with patch.dict("realtime_api.main.wrappers", {"b28": b28}, clear=True), \
+         patch("realtime_api.main.default_model_name", "b28"), \
+         patch("realtime_api.main._schedule_bring_up") as sched:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/analyze", json={"id": "r", "moves": [["B", "Q4"]]})
+            assert resp.status_code == 503
+            b28.query.assert_called_once()
+            sched.assert_called_once_with("b28")
+
+
+@pytest.mark.asyncio
 async def test_analyze_strips_model_but_keeps_humanslprofile():
     b18 = _mock_wrapper({"id": "r"})
     with patch.dict("realtime_api.main.wrappers", {"b18": b18}, clear=True), \
