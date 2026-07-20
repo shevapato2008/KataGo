@@ -54,37 +54,44 @@ async def test_katago_wrapper_without_human_model():
 
 @pytest.mark.asyncio
 async def test_api_health_check_with_human_model():
-    # Mock the wrapper in main
-    with patch("realtime_api.main.katago_wrapper", new_callable=MagicMock) as mock_wrapper:
-        mock_wrapper.start = AsyncMock()
-        mock_wrapper.stop = AsyncMock()
-        mock_wrapper.process = MagicMock()
-        mock_wrapper.process.returncode = None
-        mock_wrapper.process.pid = 1234
-        mock_wrapper.has_human_model = True  # Simulate human model present
-        
+    mock_wrapper = MagicMock()
+    mock_wrapper.start = AsyncMock()
+    mock_wrapper.stop = AsyncMock()
+    mock_wrapper.process = MagicMock()
+    mock_wrapper.process.returncode = None
+    mock_wrapper.process.pid = 1234
+    mock_wrapper.has_human_model = True
+    mock_cfg = MagicMock()
+    mock_cfg.katago.models = []
+    with patch.dict("realtime_api.main.wrappers", {"default": mock_wrapper}, clear=True), \
+         patch("realtime_api.main.default_model_name", "default"), \
+         patch("realtime_api.main.app_config", mock_cfg):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/health")
             assert response.status_code == 200
             json_resp = response.json()
             assert json_resp["status"] == "ok"
-            assert json_resp["has_human_model"] is True
+            assert json_resp["models"]["default"]["has_human_model"] is True
 
 @pytest.mark.asyncio
 async def test_api_health_check_without_human_model():
-    with patch("realtime_api.main.katago_wrapper", new_callable=MagicMock) as mock_wrapper:
-        mock_wrapper.start = AsyncMock()
-        mock_wrapper.stop = AsyncMock()
-        mock_wrapper.process = MagicMock()
-        mock_wrapper.process.returncode = None
-        mock_wrapper.process.pid = 1234
-        mock_wrapper.has_human_model = False
-        
+    mock_wrapper = MagicMock()
+    mock_wrapper.start = AsyncMock()
+    mock_wrapper.stop = AsyncMock()
+    mock_wrapper.process = MagicMock()
+    mock_wrapper.process.returncode = None
+    mock_wrapper.process.pid = 1234
+    mock_wrapper.has_human_model = False
+    mock_cfg = MagicMock()
+    mock_cfg.katago.models = []
+    with patch.dict("realtime_api.main.wrappers", {"default": mock_wrapper}, clear=True), \
+         patch("realtime_api.main.default_model_name", "default"), \
+         patch("realtime_api.main.app_config", mock_cfg):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/health")
             assert response.status_code == 200
             json_resp = response.json()
             assert json_resp["status"] == "ok"
-            assert json_resp["has_human_model"] is False
+            assert json_resp["models"]["default"]["has_human_model"] is False

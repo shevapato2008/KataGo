@@ -3,6 +3,7 @@
 ## Project Structure & Module Organization
 - `cpp/` holds the C++ engine and backends; key subdirs include `core/`, `game/`, `neuralnet/`, `search/`, and `command/` for CLI subcommands.
 - `python/` contains training scripts and the `python/katago/` package; the real-time API lives in `python/realtime_api/`.
+- The realtime API can host multiple models (`config.yaml` → `katago.models[]` + `default_model`); requests pick one via `overrideSettings.model` (default = `default_model`). Legacy single-`model:` configs still work.
 - `cpp/tests/` contains C++ unit/regression tests and fixtures in `cpp/tests/data/`; `tests/` contains Python tests for the API.
 - `docs/`, `images/`, and `misc/` provide documentation, diagrams, and auxiliary data.
 
