@@ -469,6 +469,18 @@ PYTHONPATH=python python3 -m realtime_api.main
 PYTHONPATH=python python3 -m realtime_api.main --mode sbc
 ```
 
+#### Model routing (server mode)
+
+`config.yaml` (server mode) hosts **two models** — `b28` (default, strongest; top-tier play + review) and `b18` (compute-light; high-dan/5D+ play). Each runs as its own KataGo subprocess.
+
+Select the model per request with `overrideSettings.model`:
+
+- `{"overrideSettings": {"model": "b18"}}` → b18 subprocess
+- `{"overrideSettings": {"model": "b28"}}` (or omit) → default (b28)
+- `overrideSettings.humanSLProfile` combines with routing: the selected subprocess uses its attached human net. **Existing humanSL traffic carries no `model` field and therefore keeps landing on the default (b28) wrapper — byte-identical to today.** Sending `humanSLProfile` together with `model:"b18"` is a *new* capability; because the engine can blend human policy with the main net's search, b18 humanSL play may differ from b28 and is not calibrated here.
+
+A present-but-invalid model selector (`null`, empty/whitespace, non-string, or an unknown name) returns **HTTP 400** — the request is never silently served by a different net. `GET /health` reports every model's status under `models` and returns **503 if the default model is down** (with the full report still in the body). The legacy single-`model:` config form (used by `config.sbc.yaml`) is still accepted and behaves exactly as before.
+
 For Docker deployments on ARM SBCs:
 ```bash
 # Server mode (default)
