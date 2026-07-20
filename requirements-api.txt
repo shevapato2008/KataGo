@@ -14,3 +14,4 @@ pytest==8.0.1
 pytest-asyncio
 httpx
 requests>=2.31
+asgi-lifespan
