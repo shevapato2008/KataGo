@@ -1,9 +1,10 @@
 import os
+import re
 from pathlib import Path
 from typing import List, Optional
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 DEFAULT_CONFIG_NAME = "config.yaml"
 
@@ -19,6 +20,16 @@ class ModelConfig(BaseModel):
     url: Optional[str] = None
     auto_download: bool = False
     sha256: Optional[str] = None
+
+    @field_validator("sha256")
+    @classmethod
+    def _validate_sha256(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", normalized):
+            raise ValueError("sha256 must contain exactly 64 hexadecimal characters")
+        return normalized
 
 
 class NamedModelConfig(ModelConfig):

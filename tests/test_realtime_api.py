@@ -160,6 +160,7 @@ async def test_api_health_check_success():
             assert data["models"]["default"]["pid"] == 1234
             assert data["models"]["default"]["has_human_model"] is False
             assert data["models"]["default"]["model_path"] == "/models/test-model.bin.gz"
+            assert data["models"]["default"]["model"] == "/models/test-model.bin.gz"
             assert data["models"]["default"]["model_sha256"] == "b" * 64
             assert data["models"]["default"]["human_model_path"] is None
             assert data["models"]["default"]["human_model_sha256"] is None
@@ -623,14 +624,70 @@ async def test_bringup_rejects_failed_post_download_verification(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_katago_version_is_normalized_and_cached_from_one_execution():
+async def test_katago_version_is_normalized_and_uses_runtime_library_environment():
     from realtime_api import main as main_mod
 
-    completed = MagicMock(returncode=0, stdout="KataGo v1.16.3\r\nGit revision: abc123\r\n", stderr="")
-    with patch("realtime_api.main.subprocess.run", return_value=completed) as run:
-        version = await main_mod._load_katago_version("/opt/katago")
+    process = MagicMock()
+    process.returncode = 0
+    process.communicate = AsyncMock(
+        return_value=(b"KataGo v1.16.3\r\nGit revision: abc123\r\n", b"")
+    )
+    with patch.dict(os.environ, {"LD_LIBRARY_PATH": "/existing"}, clear=True), \
+         patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)) as spawn:
+        version = await main_mod._load_katago_version(
+            "/opt/katago", ["/runtime/a", "/runtime/b"]
+        )
     assert version == "KataGo v1.16.3\nGit revision: abc123"
-    run.assert_called_once()
+    spawn.assert_awaited_once()
+    assert spawn.await_args.kwargs["env"]["LD_LIBRARY_PATH"] == "/runtime/a:/runtime/b:/existing"
+
+
+@pytest.mark.asyncio
+async def test_katago_version_timeout_terminates_then_kills_process():
+    from realtime_api import main as main_mod
+
+    blocked = asyncio.Event()
+
+    async def block_communicate():
+        await blocked.wait()
+
+    process = MagicMock()
+    process.returncode = None
+    process.communicate = AsyncMock(side_effect=block_communicate)
+    process.terminate = MagicMock()
+    process.kill = MagicMock()
+    process.wait = AsyncMock(side_effect=[asyncio.TimeoutError(), None])
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)):
+        with pytest.raises(TimeoutError, match="timed out"):
+            await main_mod._load_katago_version("/opt/katago", [], timeout=0.01)
+    process.terminate.assert_called_once()
+    process.kill.assert_called_once()
+    assert process.wait.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_katago_version_cancellation_cleans_up_process():
+    from realtime_api import main as main_mod
+
+    blocked = asyncio.Event()
+
+    async def block_communicate():
+        await blocked.wait()
+
+    process = MagicMock()
+    process.returncode = None
+    process.communicate = AsyncMock(side_effect=block_communicate)
+    process.terminate = MagicMock()
+    process.kill = MagicMock()
+    process.wait = AsyncMock(return_value=None)
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)):
+        task = asyncio.create_task(main_mod._load_katago_version("/opt/katago", []))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    process.terminate.assert_called_once()
+    process.wait.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,20 @@ from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
+
+def merge_ld_library_path(env: Dict[str, str], ld_library_paths: List[str]) -> None:
+    if not ld_library_paths:
+        return
+
+    current_ld = env.get('LD_LIBRARY_PATH', '')
+    merged_paths = []
+    for path in ld_library_paths + (current_ld.split(':') if current_ld else []):
+        if path and path not in merged_paths:
+            merged_paths.append(path)
+
+    env['LD_LIBRARY_PATH'] = ':'.join(merged_paths)
+
+
 class KataGoWrapper:
     def __init__(
         self,
@@ -180,13 +194,4 @@ class KataGoWrapper:
                 break
 
     def _merge_ld_library_path(self, env: Dict[str, str]) -> None:
-        if not self.ld_library_paths:
-            return
-
-        current_ld = env.get('LD_LIBRARY_PATH', '')
-        merged_paths = []
-        for path in self.ld_library_paths + (current_ld.split(':') if current_ld else []):
-            if path and path not in merged_paths:
-                merged_paths.append(path)
-
-        env['LD_LIBRARY_PATH'] = ':'.join(merged_paths)
+        merge_ld_library_path(env, self.ld_library_paths)

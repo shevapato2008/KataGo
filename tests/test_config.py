@@ -181,3 +181,31 @@ def test_multimodel_requires_nonempty_paths_and_hashes(tmp_path, model_yaml):
     )
     with pytest.raises(ValidationError):
         load_config(str(bad))
+
+
+@pytest.mark.parametrize(
+    "schema_body",
+    [
+        "  model: {path: /tmp/main.bin.gz, sha256: short}\n",
+        "  model: {path: /tmp/main.bin.gz, sha256: 'gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg'}\n",
+        (
+            "  model: {path: /tmp/main.bin.gz, sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}\n"
+            "  human_model: {path: /tmp/human.bin.gz, sha256: xyz}\n"
+        ),
+        (
+            "  models:\n"
+            "    - {name: b28, path: /tmp/main.bin.gz, sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!'}\n"
+            "  default_model: b28\n"
+        ),
+    ],
+)
+def test_all_provided_model_hashes_must_be_64_hex_characters(tmp_path, schema_body):
+    bad = tmp_path / "invalid-hash.yaml"
+    bad.write_text(
+        "katago:\n"
+        "  path: /x/katago\n"
+        "  config_path: /x/a.cfg\n"
+        + schema_body
+    )
+    with pytest.raises(ValidationError, match="64 hexadecimal"):
+        load_config(str(bad))

@@ -2,7 +2,6 @@ import asyncio
 import hashlib
 import logging
 import os
-import subprocess
 import sys
 import threading
 import time
@@ -24,7 +23,7 @@ from .config import (
     get_default_config_path,
     load_config,
 )
-from .katago_wrapper import KataGoWrapper
+from .katago_wrapper import KataGoWrapper, merge_ld_library_path
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -73,7 +72,7 @@ async def lifespan(app: FastAPI):
     katago_cfg = app_config.katago
 
     try:
-        katago_version = await _load_katago_version(katago_cfg.path)
+        katago_version = await _load_katago_version(katago_cfg.path, katago_cfg.ld_library_paths)
     except Exception as e:
         logger.error("Failed to identify KataGo executable %s: %s", katago_cfg.path, e)
         yield
@@ -156,23 +155,56 @@ def _new_wrapper(m: "NamedModelConfig") -> KataGoWrapper:
     )
 
 
-async def _load_katago_version(katago_path: str) -> str:
+async def _terminate_version_process(process: asyncio.subprocess.Process, timeout: float = 1.0) -> None:
+    if process.returncode is not None:
+        return
+    try:
+        process.terminate()
+    except ProcessLookupError:
+        await process.wait()
+        return
+    try:
+        await asyncio.wait_for(process.wait(), timeout=timeout)
+        return
+    except asyncio.TimeoutError:
+        pass
+    if process.returncode is None:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+    await process.wait()
+
+
+async def _load_katago_version(katago_path: str, ld_library_paths: List[str], timeout: float = 10.0) -> str:
     """Execute ``katago version`` once and return its complete normalized output."""
 
-    def run_version():
-        return subprocess.run(
-            [katago_path, "version"], capture_output=True, text=True, check=False
-        )
+    env = os.environ.copy()
+    merge_ld_library_path(env, ld_library_paths)
+    process = await asyncio.create_subprocess_exec(
+        katago_path,
+        "version",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except asyncio.TimeoutError as e:
+        await _terminate_version_process(process)
+        raise TimeoutError(f"KataGo version timed out after {timeout}s") from e
+    except asyncio.CancelledError:
+        await _terminate_version_process(process)
+        raise
 
-    completed = await asyncio.to_thread(run_version)
     normalized = "\n".join(
-        part.replace("\r\n", "\n").replace("\r", "\n").strip()
-        for part in (completed.stdout, completed.stderr)
+        part.decode(errors="replace").replace("\r\n", "\n").replace("\r", "\n").strip()
+        for part in (stdout, stderr)
         if part and part.strip()
     )
-    if completed.returncode != 0:
+    if process.returncode != 0:
         raise RuntimeError(
-            f"KataGo version exited with status {completed.returncode}: {normalized or 'no output'}"
+            f"KataGo version exited with status {process.returncode}: {normalized or 'no output'}"
         )
     if not normalized:
         raise RuntimeError("KataGo version returned no output")
@@ -349,6 +381,7 @@ async def health():
             "running": running,
             "returncode": proc.returncode if proc else None,
             "has_human_model": wrapper.has_human_model,
+            "model": wrapper.model_path,
             "model_path": wrapper.model_path,
             "model_sha256": wrapper.model_sha256,
             "model_sha256_verified": wrapper.model_sha256_verified,
