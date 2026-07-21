@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -32,6 +33,7 @@ logger = logging.getLogger("realtime_api")
 wrappers: dict[str, KataGoWrapper] = {}
 default_model_name: Optional[str] = None
 app_config: Optional[AppConfig] = None
+katago_version: Optional[str] = None
 _models_by_name: dict = {}         # name -> NamedModelConfig (for lazy re-bring-up)
 _bringup_tasks: list = []          # background/lazy bring-up tasks (awaited on shutdown)
 _bringup_inflight: set = set()     # model names with a bring-up currently running (dedup)
@@ -50,7 +52,7 @@ _MODEL_KEY_ABSENT = object()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global wrappers, default_model_name, app_config, _models_by_name, _bringup_tasks
-    global _download_executor
+    global _download_executor, katago_version
 
     if wrappers:
         yield
@@ -65,9 +67,17 @@ async def lifespan(app: FastAPI):
         return
 
     _shutdown_event.clear()
+    katago_version = None
     default_model_name = app_config.katago.default_model
     _models_by_name = {m.name: m for m in app_config.katago.models}
     katago_cfg = app_config.katago
+
+    try:
+        katago_version = await _load_katago_version(katago_cfg.path)
+    except Exception as e:
+        logger.error("Failed to identify KataGo executable %s: %s", katago_cfg.path, e)
+        yield
+        return
 
     # Everything after resource creation is wrapped in try/finally so cleanup runs on ANY
     # exit — normal shutdown, an exception, OR a cancellation injected during startup
@@ -146,6 +156,29 @@ def _new_wrapper(m: "NamedModelConfig") -> KataGoWrapper:
     )
 
 
+async def _load_katago_version(katago_path: str) -> str:
+    """Execute ``katago version`` once and return its complete normalized output."""
+
+    def run_version():
+        return subprocess.run(
+            [katago_path, "version"], capture_output=True, text=True, check=False
+        )
+
+    completed = await asyncio.to_thread(run_version)
+    normalized = "\n".join(
+        part.replace("\r\n", "\n").replace("\r", "\n").strip()
+        for part in (completed.stdout, completed.stderr)
+        if part and part.strip()
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"KataGo version exited with status {completed.returncode}: {normalized or 'no output'}"
+        )
+    if not normalized:
+        raise RuntimeError("KataGo version returned no output")
+    return normalized
+
+
 def _artifact_lock(path: str) -> "asyncio.Lock":
     lock = _artifact_locks.get(path)
     if lock is None:
@@ -154,12 +187,12 @@ def _artifact_lock(path: str) -> "asyncio.Lock":
     return lock
 
 
-async def _ensure_artifact(model: "ModelConfig", label: str) -> None:
+async def _ensure_artifact(model: "ModelConfig", label: str) -> tuple[str, bool]:
     """Ensure one artifact, serialized per destination path so concurrent bring-ups that
     share an artifact (e.g. the same humanv0) never download into the same temp file at
     once."""
     async with _artifact_lock(model.path):
-        await _ensure_single_model(model, label)
+        return await _ensure_single_model(model, label)
 
 
 async def _supervise_bring_up(name: str) -> None:
@@ -201,9 +234,14 @@ async def _bring_up_model(m: "NamedModelConfig", wrapper: KataGoWrapper) -> None
     /health reports as not-running and /analyze answers 503 for."""
     logger.info("Bringing up model '%s': main=%s", m.name, m.path)
     try:
-        await _ensure_artifact(m, f"Main model [{m.name}]")
+        wrapper.model_sha256, wrapper.model_sha256_verified = await _ensure_artifact(
+            m, f"Main model [{m.name}]"
+        )
         if m.human_model:
-            await _ensure_artifact(m.human_model, f"Human model [{m.name}]")
+            (
+                wrapper.human_model_sha256,
+                wrapper.human_model_sha256_verified,
+            ) = await _ensure_artifact(m.human_model, f"Human model [{m.name}]")
         await wrapper.start()
         logger.info("Model '%s' started", m.name)
     except asyncio.CancelledError:
@@ -283,7 +321,11 @@ async def analyze(request: MoveRequest):
         logger.info(f"Analysis {request.id} model={name} game={request.gameId} user={request.userId}")
 
     try:
-        return await wrapper.query(query)
+        result = await wrapper.query(query)
+        return {
+            **result,
+            "_wrapper": _wrapper_identity(name, wrapper),
+        }
     except Exception as e:
         logger.error(f"Analysis failed (id={request.id}, model={name}): {e}")
         if wrapper.process and wrapper.process.returncode is not None:
@@ -295,13 +337,8 @@ async def analyze(request: MoveRequest):
 
 @app.get("/health")
 async def health():
-    if not wrappers:
+    if not wrappers or not katago_version:
         raise HTTPException(status_code=503, detail="Wrapper not initialized")
-
-    path_by_name = {}
-    if app_config:
-        for m in app_config.katago.models:
-            path_by_name[m.name] = m.path
 
     models = {}
     for name, wrapper in wrappers.items():
@@ -312,13 +349,20 @@ async def health():
             "running": running,
             "returncode": proc.returncode if proc else None,
             "has_human_model": wrapper.has_human_model,
-            "model": path_by_name.get(name),
+            "model_path": wrapper.model_path,
+            "model_sha256": wrapper.model_sha256,
+            "model_sha256_verified": wrapper.model_sha256_verified,
+            "human_model_path": wrapper.human_model_path,
+            "human_model_sha256": wrapper.human_model_sha256,
+            "human_model_sha256_verified": wrapper.human_model_sha256_verified,
         }
 
     all_ok = all(m["running"] for m in models.values())
     default_ok = default_model_name in models and models[default_model_name]["running"]
     body = {
         "status": "ok" if all_ok else "degraded",
+        "capability_schema": 1,
+        "katago_version": katago_version,
         "default_model": default_model_name,
         "models": models,
     }
@@ -328,34 +372,52 @@ async def health():
         return JSONResponse(status_code=503, content={**body, "status": "unavailable"})
     return body
 
-async def _ensure_single_model(model: "ModelConfig", label: str) -> None:
+def _wrapper_identity(name: str, wrapper: KataGoWrapper) -> dict:
+    return {
+        "selected_model": name,
+        "model_path": wrapper.model_path,
+        "model_sha256": wrapper.model_sha256,
+        "model_sha256_verified": wrapper.model_sha256_verified,
+        "human_model_path": wrapper.human_model_path,
+        "human_model_sha256": wrapper.human_model_sha256,
+        "human_model_sha256_verified": wrapper.human_model_sha256_verified,
+        "katago_version": katago_version,
+    }
+
+
+async def _ensure_single_model(model: "ModelConfig", label: str) -> tuple[str, bool]:
     expected_sha = _normalize_sha256(model.sha256)
     if expected_sha:
         logger.info("%s expected SHA256: %s", label, expected_sha)
     if os.path.isfile(model.path):
+        actual_sha = _model_sha256(model.path)
         if expected_sha:
-            if _verify_model_checksum(model.path, expected_sha):
-                return
+            if actual_sha == expected_sha:
+                return actual_sha, True
             if not model.auto_download:
-                logger.error("%s checksum mismatch for %s", label, model.path)
-                return
+                raise ValueError(
+                    f"{label} checksum mismatch for {model.path}: "
+                    f"expected {expected_sha}, got {actual_sha}"
+                )
             logger.warning("%s checksum mismatch, re-downloading: %s", label, model.path)
-            os.remove(model.path)
         else:
-            return
+            return actual_sha, False
     if not model.auto_download:
-        return
+        raise FileNotFoundError(f"{label} not found: {model.path}")
     if not model.url:
-        logger.error("%s auto-download enabled but no URL configured.", label)
-        return
+        raise ValueError(f"{label} auto-download enabled but no URL configured")
 
     logger.info("Downloading %s from %s to %s", label, model.url, model.path)
-    try:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(_download_executor, _download_model, model.url, model.path, expected_sha)
-        logger.info("%s download completed.", label)
-    except Exception as e:
-        logger.error("Failed to download %s: %s", label, e)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(_download_executor, _download_model, model.url, model.path, expected_sha)
+    actual_sha = _model_sha256(model.path)
+    if expected_sha and actual_sha != expected_sha:
+        raise ValueError(
+            f"{label} post-download checksum mismatch for {model.path}: "
+            f"expected {expected_sha}, got {actual_sha}"
+        )
+    logger.info("%s download completed and attested.", label)
+    return actual_sha, bool(expected_sha)
 
 def _download_model(url: str, dest_path: str, expected_sha: Optional[str], retries: int = 10) -> None:
     dest_dir = os.path.dirname(dest_path)
@@ -437,6 +499,17 @@ def _verify_model_checksum(path: str, expected_sha: str) -> bool:
         return False
     logger.info("Model checksum verified for %s", path)
     return True
+
+
+def _model_sha256(path: str) -> str:
+    hasher = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest().lower()
 
 def _normalize_sha256(value: Optional[str]) -> Optional[str]:
     if not value:

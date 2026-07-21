@@ -7,11 +7,13 @@ katago:
       sha256: "798da8fe3e9819f09535240b1bc29cb3047a4fa981433c56c491e57007a3d3f0"
       human_model:
         path: "/tmp/models/humanv0.bin.gz"
+        sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     - name: b18
       path: "/tmp/models/b18.bin.gz"
       sha256: "9d7a6afed8ff5b74894727e156f04f0cd36060a24824892008fbb6e0cba51f1d"
       human_model:
         path: "/tmp/models/humanv0.bin.gz"
+        sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   default_model: b28
 api:
   host: "127.0.0.1"

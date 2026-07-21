@@ -58,6 +58,24 @@ class KataGoConfig(BaseModel):
                 )
             if has_models and not data.get("models"):
                 raise ValueError("katago.models, when present, must be a non-empty list")
+            if has_models:
+                for index, model in enumerate(data.get("models") or []):
+                    if not isinstance(model, dict):
+                        continue
+                    if not str(model.get("path") or "").strip():
+                        raise ValueError(f"katago.models[{index}].path must be non-empty")
+                    if not str(model.get("sha256") or "").strip():
+                        raise ValueError(f"katago.models[{index}].sha256 is required")
+                    human = model.get("human_model")
+                    if isinstance(human, dict):
+                        if not str(human.get("path") or "").strip():
+                            raise ValueError(
+                                f"katago.models[{index}].human_model.path must be non-empty"
+                            )
+                        if not str(human.get("sha256") or "").strip():
+                            raise ValueError(
+                                f"katago.models[{index}].human_model.sha256 is required"
+                            )
         return data
 
     @model_validator(mode="after")

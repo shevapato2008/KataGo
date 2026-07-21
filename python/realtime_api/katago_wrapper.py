@@ -21,6 +21,10 @@ class KataGoWrapper:
         self.config_path = config_path
         self.model_path = model_path
         self.human_model_path = human_model_path
+        self.model_sha256: Optional[str] = None
+        self.model_sha256_verified = False
+        self.human_model_sha256: Optional[str] = None
+        self.human_model_sha256_verified = False
         self.additional_args = additional_args or []
         self.ld_library_paths = ld_library_paths or []
         self.process: Optional[asyncio.subprocess.Process] = None
@@ -110,8 +114,13 @@ class KataGoWrapper:
         # Filter out fields that KataGo C++ engine does not understand
         safe_query_data = {
             k: v for k, v in query_data.items()
-            if k not in ('gameId', 'userId')
+            if k not in ('gameId', 'userId', '_wrapper')
         }
+        override = safe_query_data.get('overrideSettings')
+        if isinstance(override, dict) and 'model' in override:
+            safe_query_data['overrideSettings'] = {
+                key: value for key, value in override.items() if key != 'model'
+            }
 
         try:
             json_str = json.dumps(safe_query_data) + '\n'

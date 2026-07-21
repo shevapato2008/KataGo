@@ -139,9 +139,12 @@ def test_per_model_additional_args_default_empty_and_parsed(tmp_path):
         "  path: /x/katago\n"
         "  config_path: /x/a.cfg\n"
         "  models:\n"
-        "    - {name: b28, path: /tmp/b28.bin.gz}\n"
+        "    - name: b28\n"
+        "      path: /tmp/b28.bin.gz\n"
+        "      sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
         "    - name: b18\n"
         "      path: /tmp/b18.bin.gz\n"
+        "      sha256: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'\n"
         "      additional_args: ['-override-config', 'cudaDeviceToUseThread0=1']\n"
         "  default_model: b28\n"
     )
@@ -150,3 +153,31 @@ def test_per_model_additional_args_default_empty_and_parsed(tmp_path):
     b18 = next(m for m in cfg.katago.models if m.name == "b18")
     assert b28.additional_args == []
     assert b18.additional_args == ["-override-config", "cudaDeviceToUseThread0=1"]
+
+
+@pytest.mark.parametrize(
+    "model_yaml",
+    [
+        "    - {name: b28, path: '', sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}\n",
+        "    - {name: b28, path: /tmp/b28.bin.gz}\n",
+        "    - {name: b28, path: /tmp/b28.bin.gz, sha256: ''}\n",
+        (
+            "    - name: b28\n"
+            "      path: /tmp/b28.bin.gz\n"
+            "      sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+            "      human_model: {path: /tmp/human.bin.gz}\n"
+        ),
+    ],
+)
+def test_multimodel_requires_nonempty_paths_and_hashes(tmp_path, model_yaml):
+    bad = tmp_path / "missing-identity.yaml"
+    bad.write_text(
+        "katago:\n"
+        "  path: /x/katago\n"
+        "  config_path: /x/a.cfg\n"
+        "  models:\n"
+        + model_yaml
+        + "  default_model: b28\n"
+    )
+    with pytest.raises(ValidationError):
+        load_config(str(bad))

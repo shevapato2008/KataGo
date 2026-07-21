@@ -2,6 +2,8 @@ import pytest
 import asyncio
 import json
 import os
+import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, AsyncMock, patch
 from httpx import AsyncClient, ASGITransport
 from asgi_lifespan import LifespanManager
@@ -66,7 +68,13 @@ async def test_katago_wrapper_query():
         await wrapper.start()
         
         # Send query
-        result = await wrapper.query({"id": "test_id"})
+        result = await wrapper.query(
+            {
+                "id": "test_id",
+                "_wrapper": {"selected_model": "untrusted"},
+                "overrideSettings": {"model": "b18", "maxVisits": 10},
+            }
+        )
         
         assert result == response_data
         
@@ -74,6 +82,9 @@ async def test_katago_wrapper_query():
         process.stdin.write.assert_called_once()
         written = process.stdin.write.call_args[0][0]
         assert b"test_id" in written
+        forwarded = json.loads(written)
+        assert "_wrapper" not in forwarded
+        assert forwarded["overrideSettings"] == {"maxVisits": 10}
         
         await wrapper.stop()
 
@@ -83,19 +94,40 @@ async def test_api_analyze_success():
     mock_wrapper.process = MagicMock()
     mock_wrapper.process.returncode = None
     expected_response = {"id": "req_1", "moveInfos": []}
+    mock_wrapper.model_path = "/models/default.bin.gz"
+    mock_wrapper.model_sha256 = "a" * 64
+    mock_wrapper.model_sha256_verified = True
+    mock_wrapper.human_model_path = None
+    mock_wrapper.human_model_sha256 = None
+    mock_wrapper.human_model_sha256_verified = False
     mock_wrapper.query = AsyncMock(return_value=expected_response)
     with patch.dict("realtime_api.main.wrappers", {"default": mock_wrapper}, clear=True), \
-         patch("realtime_api.main.default_model_name", "default"):
+         patch("realtime_api.main.default_model_name", "default"), \
+         patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             payload = {"id": "req_1", "moves": [["B", "Q4"]], "rules": "Chinese"}
             response = await client.post("/analyze", json=payload)
             assert response.status_code == 200
-            assert response.json() == expected_response
+            assert response.json() == {
+                **expected_response,
+                "_wrapper": {
+                    "selected_model": "default",
+                    "model_path": "/models/default.bin.gz",
+                    "model_sha256": "a" * 64,
+                    "model_sha256_verified": True,
+                    "human_model_path": None,
+                    "human_model_sha256": None,
+                    "human_model_sha256_verified": False,
+                    "katago_version": "KataGo v1.16.3",
+                },
+            }
             mock_wrapper.query.assert_called_once()
             call_arg = mock_wrapper.query.call_args[0][0]
             assert call_arg["id"] == "req_1"
             assert call_arg["moves"] == [("B", "Q4")]
+            assert "_wrapper" not in call_arg
+            assert "model" not in call_arg.get("overrideSettings", {})
 
 
 @pytest.mark.asyncio
@@ -106,19 +138,31 @@ async def test_api_health_check_success():
     mock_wrapper.process.pid = 1234
     mock_wrapper.has_human_model = False
     mock_wrapper.model_path = "/models/test-model.bin.gz"
+    mock_wrapper.model_sha256 = "b" * 64
+    mock_wrapper.model_sha256_verified = True
+    mock_wrapper.human_model_path = None
+    mock_wrapper.human_model_sha256 = None
+    mock_wrapper.human_model_sha256_verified = False
     mock_cfg = MagicMock()
     mock_cfg.katago.models = []
     with patch.dict("realtime_api.main.wrappers", {"default": mock_wrapper}, clear=True), \
          patch("realtime_api.main.default_model_name", "default"), \
-         patch("realtime_api.main.app_config", mock_cfg):
+         patch("realtime_api.main.app_config", mock_cfg), \
+         patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/health")
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "ok"
+            assert data["capability_schema"] == 1
+            assert data["katago_version"] == "KataGo v1.16.3"
             assert data["models"]["default"]["pid"] == 1234
             assert data["models"]["default"]["has_human_model"] is False
+            assert data["models"]["default"]["model_path"] == "/models/test-model.bin.gz"
+            assert data["models"]["default"]["model_sha256"] == "b" * 64
+            assert data["models"]["default"]["human_model_path"] is None
+            assert data["models"]["default"]["human_model_sha256"] is None
 
 
 @pytest.mark.asyncio
@@ -128,11 +172,18 @@ async def test_api_health_check_failure():
     mock_wrapper.process.returncode = 1  # died
     mock_wrapper.process.pid = 1234
     mock_wrapper.has_human_model = False
+    mock_wrapper.model_path = "/models/test-model.bin.gz"
+    mock_wrapper.model_sha256 = "b" * 64
+    mock_wrapper.model_sha256_verified = True
+    mock_wrapper.human_model_path = None
+    mock_wrapper.human_model_sha256 = None
+    mock_wrapper.human_model_sha256_verified = False
     mock_cfg = MagicMock()
     mock_cfg.katago.models = []
     with patch.dict("realtime_api.main.wrappers", {"default": mock_wrapper}, clear=True), \
          patch("realtime_api.main.default_model_name", "default"), \
-         patch("realtime_api.main.app_config", mock_cfg):
+         patch("realtime_api.main.app_config", mock_cfg), \
+         patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/health")
@@ -148,6 +199,12 @@ def _mock_wrapper(response):
     w.process.returncode = None
     w.process.pid = 4321
     w.has_human_model = True
+    w.model_path = "/models/main.bin.gz"
+    w.model_sha256 = "c" * 64
+    w.model_sha256_verified = True
+    w.human_model_path = "/models/human.bin.gz"
+    w.human_model_sha256 = "d" * 64
+    w.human_model_sha256_verified = True
     w.query = AsyncMock(return_value=response)
     return w
 
@@ -157,7 +214,8 @@ async def test_analyze_routes_to_requested_model():
     b28 = _mock_wrapper({"id": "r", "engine": "b28"})
     b18 = _mock_wrapper({"id": "r", "engine": "b18"})
     with patch.dict("realtime_api.main.wrappers", {"b28": b28, "b18": b18}, clear=True), \
-         patch("realtime_api.main.default_model_name", "b28"):
+         patch("realtime_api.main.default_model_name", "b28"), \
+         patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             payload = {"id": "r", "moves": [["B", "Q4"]], "overrideSettings": {"model": "b18"}}
@@ -168,6 +226,17 @@ async def test_analyze_routes_to_requested_model():
             # forwarded query must NOT carry the routing key
             forwarded = b18.query.call_args[0][0]
             assert "model" not in forwarded.get("overrideSettings", {})
+            assert "_wrapper" not in forwarded
+            assert resp.json()["_wrapper"] == {
+                "selected_model": "b18",
+                "model_path": "/models/main.bin.gz",
+                "model_sha256": "c" * 64,
+                "model_sha256_verified": True,
+                "human_model_path": "/models/human.bin.gz",
+                "human_model_sha256": "d" * 64,
+                "human_model_sha256_verified": True,
+                "katago_version": "KataGo v1.16.3",
+            }
 
 
 @pytest.mark.asyncio
@@ -175,13 +244,20 @@ async def test_analyze_defaults_to_default_model():
     b28 = _mock_wrapper({"id": "r"})
     b18 = _mock_wrapper({"id": "r"})
     with patch.dict("realtime_api.main.wrappers", {"b28": b28, "b18": b18}, clear=True), \
-         patch("realtime_api.main.default_model_name", "b28"):
+         patch("realtime_api.main.default_model_name", "b28"), \
+         patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/analyze", json={"id": "r", "moves": [["B", "Q4"]]})
             assert resp.status_code == 200
             b28.query.assert_called_once()
             b18.query.assert_not_called()
+            assert resp.json()["_wrapper"]["selected_model"] == "b28"
+            assert resp.json()["_wrapper"]["model_sha256"] == "c" * 64
+            assert resp.json()["_wrapper"]["katago_version"] == "KataGo v1.16.3"
+            forwarded = b28.query.call_args.args[0]
+            assert "_wrapper" not in forwarded
+            assert "model" not in forwarded.get("overrideSettings", {})
 
 
 @pytest.mark.asyncio
@@ -261,7 +337,8 @@ async def test_health_reports_all_models():
     mock_cfg.katago.models = []
     with patch.dict("realtime_api.main.wrappers", {"b28": b28, "b18": b18}, clear=True), \
          patch("realtime_api.main.default_model_name", "b28"), \
-         patch("realtime_api.main.app_config", mock_cfg):
+         patch("realtime_api.main.app_config", mock_cfg), \
+         patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/health")
@@ -270,6 +347,15 @@ async def test_health_reports_all_models():
             assert data["status"] == "ok"
             assert data["default_model"] == "b28"
             assert set(data["models"].keys()) == {"b28", "b18"}
+            for model in data["models"].values():
+                assert model["running"] is True
+                assert model["pid"] == 4321
+                assert model["model_path"] == "/models/main.bin.gz"
+                assert model["model_sha256"] == "c" * 64
+                assert model["model_sha256_verified"] is True
+                assert model["human_model_path"] == "/models/human.bin.gz"
+                assert model["human_model_sha256"] == "d" * 64
+                assert model["human_model_sha256_verified"] is True
 
 
 @pytest.mark.asyncio
@@ -283,7 +369,8 @@ async def test_health_non_default_down_is_degraded_200():
     mock_cfg.katago.models = []
     with patch.dict("realtime_api.main.wrappers", {"b28": b28, "b18": b18}, clear=True), \
          patch("realtime_api.main.default_model_name", "b28"), \
-         patch("realtime_api.main.app_config", mock_cfg):
+         patch("realtime_api.main.app_config", mock_cfg), \
+         patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/health")
@@ -305,7 +392,8 @@ async def test_health_default_down_is_503_with_full_report():
     mock_cfg.katago.models = []
     with patch.dict("realtime_api.main.wrappers", {"b28": b28, "b18": b18}, clear=True), \
          patch("realtime_api.main.default_model_name", "b28"), \
-         patch("realtime_api.main.app_config", mock_cfg):
+         patch("realtime_api.main.app_config", mock_cfg), \
+         patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/health")
@@ -326,7 +414,8 @@ async def test_health_failed_start_wrapper_reported_not_raised():
     mock_cfg.katago.models = []
     with patch.dict("realtime_api.main.wrappers", {"b28": b28}, clear=True), \
          patch("realtime_api.main.default_model_name", "b28"), \
-         patch("realtime_api.main.app_config", mock_cfg):
+         patch("realtime_api.main.app_config", mock_cfg), \
+         patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/health")
@@ -357,11 +446,13 @@ async def test_lifespan_builds_registry_from_legacy_config():
          patch("realtime_api.main.default_model_name", None), \
          patch.dict(_os.environ, {"KATAGO_CONFIG_FILE": legacy}), \
          patch("realtime_api.main._ensure_single_model", new=AsyncMock()), \
+         patch("realtime_api.main._load_katago_version", new=AsyncMock(return_value="KataGo test")) as load_version, \
          patch("realtime_api.main.KataGoWrapper", side_effect=_fake_wrapper):
         transport = ASGITransport(app=app)
         async with LifespanManager(app):  # triggers lifespan startup/shutdown
             assert set(main_mod.wrappers.keys()) == {"default"}
             assert main_mod.default_model_name == "default"
+            load_version.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -376,6 +467,7 @@ async def test_default_serves_while_secondary_bringup_blocked():
     async def fake_ensure(model, label):
         if "b18" in model.path:      # only b18's MAIN artifact blocks
             await block.wait()
+        return "a" * 64, True
 
     def make_wrapper(*args, **kwargs):
         w = MagicMock()
@@ -439,6 +531,7 @@ async def test_model_recovers_from_transient_bringup_failure():
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("transient download failure")  # first attempt fails
+        return "a" * 64, True
 
     def make_wrapper(mm):
         w = MagicMock()
@@ -460,6 +553,100 @@ async def test_model_recovers_from_transient_bringup_failure():
         assert main_mod.wrappers["b18"].process is None
         await main_mod._supervise_bring_up("b18")            # attempt 2 → heals, no restart
         assert main_mod.wrappers["b18"].process is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch_target", ["main", "human"])
+async def test_bringup_rejects_existing_model_hash_mismatch_without_download(tmp_path, mismatch_target):
+    from realtime_api import main as main_mod
+    from realtime_api.config import ModelConfig, NamedModelConfig
+
+    main_path = tmp_path / "main.bin.gz"
+    human_path = tmp_path / "human.bin.gz"
+    main_path.write_bytes(b"actual-main")
+    human_path.write_bytes(b"actual-human")
+    main_sha = hashlib.sha256(main_path.read_bytes()).hexdigest()
+    human_sha = hashlib.sha256(human_path.read_bytes()).hexdigest()
+    if mismatch_target == "main":
+        main_sha = "0" * 64
+    else:
+        human_sha = "0" * 64
+
+    model = NamedModelConfig(
+        name="b28",
+        path=str(main_path),
+        sha256=main_sha,
+        auto_download=False,
+        human_model=ModelConfig(path=str(human_path), sha256=human_sha, auto_download=False),
+    )
+    wrapper = MagicMock()
+    wrapper.process = None
+    wrapper.start = AsyncMock()
+
+    with patch.dict(main_mod.wrappers, {"b28": wrapper}, clear=True):
+        await main_mod._bring_up_model(model, wrapper)
+        wrapper.start.assert_not_awaited()
+        assert not any(w.process and w.process.returncode is None for w in main_mod.wrappers.values())
+
+
+@pytest.mark.asyncio
+async def test_bringup_rejects_failed_post_download_verification(tmp_path):
+    from realtime_api import main as main_mod
+    from realtime_api.config import NamedModelConfig
+
+    path = tmp_path / "downloaded.bin.gz"
+    model = NamedModelConfig(
+        name="b28",
+        path=str(path),
+        url="https://example.invalid/model.bin.gz",
+        sha256="0" * 64,
+        auto_download=True,
+    )
+    wrapper = MagicMock()
+    wrapper.process = None
+    wrapper.start = AsyncMock()
+
+    def fake_download(url, dest, expected):
+        with open(dest, "wb") as handle:
+            handle.write(b"wrong downloaded bytes")
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        with patch.dict(main_mod.wrappers, {"b28": wrapper}, clear=True), \
+             patch("realtime_api.main._download_executor", executor), \
+             patch("realtime_api.main._download_model", side_effect=fake_download):
+            await main_mod._bring_up_model(model, wrapper)
+            wrapper.start.assert_not_awaited()
+            assert not any(w.process and w.process.returncode is None for w in main_mod.wrappers.values())
+    finally:
+        executor.shutdown(wait=True)
+
+
+@pytest.mark.asyncio
+async def test_katago_version_is_normalized_and_cached_from_one_execution():
+    from realtime_api import main as main_mod
+
+    completed = MagicMock(returncode=0, stdout="KataGo v1.16.3\r\nGit revision: abc123\r\n", stderr="")
+    with patch("realtime_api.main.subprocess.run", return_value=completed) as run:
+        version = await main_mod._load_katago_version("/opt/katago")
+    assert version == "KataGo v1.16.3\nGit revision: abc123"
+    run.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_katago_version_failure_prevents_lifespan_availability():
+    from realtime_api import main as main_mod
+
+    legacy = os.path.join(os.path.dirname(__file__), "test_config.yaml")
+    with patch.dict(main_mod.wrappers, {}, clear=True), \
+         patch.dict(os.environ, {"KATAGO_CONFIG_FILE": legacy}), \
+         patch("realtime_api.main._load_katago_version", side_effect=RuntimeError("version failed")):
+        async with LifespanManager(app):
+            assert main_mod.wrappers == {}
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/health")
+                assert response.status_code == 503
 
 
 def test_download_aborts_on_shutdown_event(tmp_path):
