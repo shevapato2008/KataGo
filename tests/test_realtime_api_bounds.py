@@ -30,8 +30,13 @@ async def test_api_analyze_with_region_bounds():
             }
             response = await client.post("/analyze", json=payload)
             assert response.status_code == 200
-            assert response.json() == expected_response
-            
+            # /analyze stamps the serving model's identity onto every reply (attestation);
+            # the region-bounds passthrough below is what this test is actually about.
+            body = response.json()
+            assert {k: v for k, v in body.items() if k != "_wrapper"} == expected_response
+            assert body["_wrapper"]["selected_model"] == "default"
+
+
             mock_wrapper.query.assert_called_once()
             call_arg = mock_wrapper.query.call_args[0][0]
             assert call_arg["id"] == "req_region"

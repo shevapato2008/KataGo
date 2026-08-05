@@ -24,12 +24,14 @@ from .config import (
     load_config,
 )
 from .katago_wrapper import KataGoWrapper, merge_ld_library_path
+from .warmup import WarmupPhase, WarmupStatus, run_full_warmup
 
 # Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("realtime_api")
 
 wrappers: dict[str, KataGoWrapper] = {}
+warmup_statuses: dict[str, WarmupStatus] = {}  # model name -> its warmup state machine
 default_model_name: Optional[str] = None
 app_config: Optional[AppConfig] = None
 katago_version: Optional[str] = None
@@ -56,6 +58,8 @@ async def lifespan(app: FastAPI):
     if wrappers:
         yield
         return
+
+    warmup_statuses.clear()
 
     config_path = os.getenv("KATAGO_CONFIG_FILE") or get_default_config_path()
     try:
@@ -100,11 +104,14 @@ async def lifespan(app: FastAPI):
         await _supervise_bring_up(default_model_name)
 
         # 3) Bring up every OTHER model in the BACKGROUND so they cannot delay serving.
-        _bringup_tasks = [
+        #    EXTEND rather than rebind: step 2 already appended the default model's warmup
+        #    task here, and dropping that reference would let the GC collect a warmup
+        #    mid-flight (leaving /health stuck at warming_* forever).
+        _bringup_tasks.extend(
             asyncio.create_task(_supervise_bring_up(m.name))
             for m in katago_cfg.models
             if m.name != default_model_name
-        ]
+        )
 
         yield
 
@@ -123,7 +130,7 @@ async def lifespan(app: FastAPI):
                 await asyncio.gather(*_bringup_tasks, return_exceptions=True)
         except asyncio.CancelledError:
             pass
-        _bringup_tasks = []
+        _bringup_tasks.clear()
         if _download_executor is not None:
             ex = _download_executor
             _download_executor = None
@@ -243,7 +250,10 @@ async def _supervise_bring_up(name: str) -> None:
     try:
         m = _models_by_name[name]
         wrappers[name] = _new_wrapper(m)  # fresh wrapper for a clean (re)start
-        await _bring_up_model(m, wrappers[name])
+        # Fresh status too: a model recovering from FAILED/READY has to warm again, and a
+        # terminal WarmupStatus refuses further transitions by design.
+        warmup_statuses[name] = WarmupStatus()
+        await _bring_up_model(m, wrappers[name], warmup_statuses[name])
     finally:
         _bringup_inflight.discard(name)
 
@@ -260,7 +270,9 @@ def _schedule_bring_up(name: str) -> None:
     _bringup_tasks.append(asyncio.create_task(_supervise_bring_up(name)))
 
 
-async def _bring_up_model(m: "NamedModelConfig", wrapper: KataGoWrapper) -> None:
+async def _bring_up_model(
+    m: "NamedModelConfig", wrapper: KataGoWrapper, status: WarmupStatus
+) -> None:
     """Ensure artifacts + start ONE wrapper under its own exception boundary. Never raises
     (except CancelledError); on failure the wrapper simply has no live process, which
     /health reports as not-running and /analyze answers 503 for."""
@@ -280,6 +292,47 @@ async def _bring_up_model(m: "NamedModelConfig", wrapper: KataGoWrapper) -> None
         raise
     except Exception as e:
         logger.error("Failed to bring up model '%s': %s", m.name, e)
+        _mark_warmup_failed(status, "engine_start_failed")
+        return
+
+    # Warm up in the BACKGROUND. The default model's bring-up is awaited before the app
+    # yields, so warming here inline would keep the port closed for the whole compile —
+    # the launcher would read "starting" (connection refused) instead of warmup progress.
+    _bringup_tasks[:] = [t for t in _bringup_tasks if not t.done()]
+    _bringup_tasks.append(asyncio.create_task(_guarded_warmup(m, wrapper, status)))
+
+
+def _mark_warmup_failed(status: WarmupStatus, error_code: str) -> None:
+    """Record a failure unless the status is already terminal (which refuses changes)."""
+    if status.phase not in (WarmupPhase.READY, WarmupPhase.FAILED):
+        status.fail(error_code)
+
+
+async def _guarded_warmup(m: "NamedModelConfig", wrapper: KataGoWrapper, status: WarmupStatus) -> None:
+    """Drive one model's warmup. Never raises except CancelledError — a warmup that blows
+    up in an unexpected way must leave a FAILED status behind, not an unhandled task."""
+    try:
+        await run_full_warmup(wrapper, status, expects_human=m.human_model is not None)
+        logger.info("Model '%s' warmup finished: %s", m.name, status.phase.value)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.error("Warmup failed unexpectedly for model '%s'", m.name)
+        _mark_warmup_failed(status, "engine_exited")
+
+
+def _effective_warmup(name: str, running: bool) -> tuple[WarmupPhase, Optional[str]]:
+    """The phase to report for one model, cross-checked against its live process.
+
+    A model with no status entry reads as STARTING (fail closed — never claim ready for a
+    model nobody has warmed), and a process that died after warmup started reads as FAILED
+    no matter what the state machine last recorded."""
+    status = warmup_statuses.get(name)
+    if status is None:
+        return WarmupPhase.STARTING, None
+    if status.phase not in (WarmupPhase.STARTING, WarmupPhase.FAILED) and not running:
+        return WarmupPhase.FAILED, "engine_exited"
+    return status.phase, status.error_code
 
 
 app = FastAPI(lifespan=lifespan)
@@ -376,6 +429,7 @@ async def health():
     for name, wrapper in wrappers.items():
         proc = wrapper.process
         running = bool(proc) and proc.returncode is None
+        phase, error_code = _effective_warmup(name, running)
         models[name] = {
             "pid": proc.pid if proc else None,
             "running": running,
@@ -388,21 +442,41 @@ async def health():
             "human_model_path": wrapper.human_model_path,
             "human_model_sha256": wrapper.human_model_sha256,
             "human_model_sha256_verified": wrapper.human_model_sha256_verified,
+            "warmup_phase": phase.value,
+            "warmup_error_code": error_code,
+            "warm": phase is WarmupPhase.READY and running,
         }
 
     all_ok = all(m["running"] for m in models.values())
-    default_ok = default_model_name in models and models[default_model_name]["running"]
+    default_report = models.get(default_model_name) or {}
+    default_ok = bool(default_report.get("running"))
+    default_phase, default_error = _effective_warmup(default_model_name, default_ok)
+    # `ready` describes the DEFAULT model: it is what an unrouted /analyze uses, and what
+    # the SmartBox launcher gates the Go mode on. Secondary models warm in the background
+    # and are reported per-model above.
+    ready = default_phase is WarmupPhase.READY and default_ok
     body = {
         "status": "ok" if all_ok else "degraded",
         "capability_schema": 1,
+        # Legacy single-model warmup fields, still the launcher's contract
+        # (setup-wizard/app/services/launcher.py::_go_health_probe): 200 + phase "ready"
+        # + ready true = usable; 503 + phase "warming_*" + ready false = show progress.
+        "schema_version": 1,
+        "phase": default_phase.value,
+        "ready": ready,
+        "pid": default_report.get("pid"),
+        "has_human_model": bool(default_report.get("has_human_model")),
+        "error_code": default_error,
         "katago_version": katago_version,
         "default_model": default_model_name,
         "models": models,
     }
-    if not default_ok:
-        # Default model down → fail the health check so load balancers pull this
-        # instance, but keep the full per-model report in the body for operators.
-        return JSONResponse(status_code=503, content={**body, "status": "unavailable"})
+    if not ready:
+        # Not servable yet (default model down, still warming, or warmup failed) → fail the
+        # health check so load balancers pull this instance and the launcher keeps waiting,
+        # but keep the full per-model report in the body for operators.
+        status_name = body["status"] if default_ok else "unavailable"
+        return JSONResponse(status_code=503, content={**body, "status": status_name})
     return body
 
 def _wrapper_identity(name: str, wrapper: KataGoWrapper) -> dict:

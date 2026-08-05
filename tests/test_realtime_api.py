@@ -9,6 +9,39 @@ from httpx import AsyncClient, ASGITransport
 from asgi_lifespan import LifespanManager
 from realtime_api.main import app
 from realtime_api.katago_wrapper import KataGoWrapper
+from realtime_api.warmup import WarmupPhase, WarmupStatus
+
+
+def _ready_warmup(*names):
+    """Warmup statuses for models that have finished warming.
+
+    Walked through the real state machine rather than assigned, so a test can never
+    describe a phase sequence the server itself could not produce.
+    """
+    statuses = {}
+    for name in names:
+        status = WarmupStatus()
+        status.transition(WarmupPhase.WARMING_NORMAL)
+        status.transition(WarmupPhase.WARMING_HUMAN)
+        status.transition(WarmupPhase.READY)
+        statuses[name] = status
+    return statuses
+
+
+# A 1-visit analysis reply that passes both warmup validators.
+WARM_RESULT = {"id": "r", "moveInfos": [], "policy": [0.5, 0.5], "humanPolicy": [0.5, 0.5]}
+
+
+async def _wait_ready(client, timeout=2.0):
+    """Poll /health until the default model reports ready (warmup runs in background)."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        resp = await client.get("/health")
+        if resp.json().get("ready") is True:
+            return resp
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"health never became ready: {resp.status_code} {resp.text[:300]}")
+
 
 # Helper to mock process
 def mock_process():
@@ -146,6 +179,7 @@ async def test_api_health_check_success():
     mock_cfg = MagicMock()
     mock_cfg.katago.models = []
     with patch.dict("realtime_api.main.wrappers", {"default": mock_wrapper}, clear=True), \
+         patch.dict("realtime_api.main.warmup_statuses", _ready_warmup("default"), clear=True), \
          patch("realtime_api.main.default_model_name", "default"), \
          patch("realtime_api.main.app_config", mock_cfg), \
          patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
@@ -156,6 +190,12 @@ async def test_api_health_check_success():
             data = response.json()
             assert data["status"] == "ok"
             assert data["capability_schema"] == 1
+            # Legacy launcher contract rides along with the capability report
+            assert data["schema_version"] == 1
+            assert data["phase"] == "ready"
+            assert data["ready"] is True
+            assert data["pid"] == 1234
+            assert data["error_code"] is None
             assert data["katago_version"] == "KataGo v1.16.3"
             assert data["models"]["default"]["pid"] == 1234
             assert data["models"]["default"]["has_human_model"] is False
@@ -337,6 +377,7 @@ async def test_health_reports_all_models():
     mock_cfg = MagicMock()
     mock_cfg.katago.models = []
     with patch.dict("realtime_api.main.wrappers", {"b28": b28, "b18": b18}, clear=True), \
+         patch.dict("realtime_api.main.warmup_statuses", _ready_warmup("b28", "b18"), clear=True), \
          patch("realtime_api.main.default_model_name", "b28"), \
          patch("realtime_api.main.app_config", mock_cfg), \
          patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
@@ -369,6 +410,7 @@ async def test_health_non_default_down_is_degraded_200():
     mock_cfg = MagicMock()
     mock_cfg.katago.models = []
     with patch.dict("realtime_api.main.wrappers", {"b28": b28, "b18": b18}, clear=True), \
+         patch.dict("realtime_api.main.warmup_statuses", _ready_warmup("b28", "b18"), clear=True), \
          patch("realtime_api.main.default_model_name", "b28"), \
          patch("realtime_api.main.app_config", mock_cfg), \
          patch("realtime_api.main.katago_version", "KataGo v1.16.3"):
@@ -438,12 +480,14 @@ async def test_lifespan_builds_registry_from_legacy_config():
         w = MagicMock()
         w.start = AsyncMock()
         w.stop = AsyncMock()
+        w.query = AsyncMock(return_value=WARM_RESULT)
         w.process = MagicMock()
         w.process.returncode = None
         w.has_human_model = kwargs.get("human_model_path") is not None
         return w
 
     with patch.dict("realtime_api.main.wrappers", {}, clear=True), \
+         patch.dict("realtime_api.main.warmup_statuses", {}, clear=True), \
          patch("realtime_api.main.default_model_name", None), \
          patch.dict(_os.environ, {"KATAGO_CONFIG_FILE": legacy}), \
          patch("realtime_api.main._ensure_single_model", new=AsyncMock()), \
@@ -481,7 +525,7 @@ async def test_default_serves_while_secondary_bringup_blocked():
             w.process.pid = 999
         w.start = _start
         w.stop = AsyncMock()
-        w.query = AsyncMock(return_value={"id": "r", "moveInfos": []})
+        w.query = AsyncMock(return_value=WARM_RESULT)
         return w
 
     with patch.dict("realtime_api.main.wrappers", {}, clear=True), \
@@ -502,9 +546,10 @@ async def test_default_serves_while_secondary_bringup_blocked():
                     "/analyze", json={"id": "r", "overrideSettings": {"model": "b18"}}
                 )
                 assert r2.status_code == 503       # configured but not ready (not 400)
-                h = await client.get("/health")
+                h = await _wait_ready(client)      # default warms in the background
                 assert h.status_code == 200
                 assert h.json()["status"] == "degraded"
+                assert h.json()["models"]["b18"]["warmup_phase"] == "starting"
         block.set()  # allow the cancelled background task to unwind
 
 
@@ -544,16 +589,23 @@ async def test_model_recovers_from_transient_bringup_failure():
         return w
 
     with patch.dict("realtime_api.main.wrappers", {}, clear=True), \
+         patch.dict("realtime_api.main.warmup_statuses", {}, clear=True), \
          patch.dict("realtime_api.main._models_by_name", {"b18": m}, clear=True), \
          patch.dict("realtime_api.main._artifact_locks", {}, clear=True), \
          patch("realtime_api.main._bringup_inflight", set()), \
+         patch("realtime_api.main._bringup_tasks", []), \
          patch("realtime_api.main.app_config", MagicMock()), \
          patch("realtime_api.main._new_wrapper", side_effect=make_wrapper), \
          patch("realtime_api.main._ensure_single_model", new=flaky_ensure):
         await main_mod._supervise_bring_up("b18")            # attempt 1 → fails
         assert main_mod.wrappers["b18"].process is None
+        # The failure is visible, not just absent: /health must be able to say why.
+        assert main_mod.warmup_statuses["b18"].phase is WarmupPhase.FAILED
+        assert main_mod.warmup_statuses["b18"].error_code == "engine_start_failed"
         await main_mod._supervise_bring_up("b18")            # attempt 2 → heals, no restart
         assert main_mod.wrappers["b18"].process is not None
+        # A retry gets a FRESH status; a terminal one would refuse to warm again.
+        assert main_mod.warmup_statuses["b18"].phase is not WarmupPhase.FAILED
 
 
 @pytest.mark.asyncio
@@ -584,10 +636,12 @@ async def test_bringup_rejects_existing_model_hash_mismatch_without_download(tmp
     wrapper.process = None
     wrapper.start = AsyncMock()
 
+    status = WarmupStatus()
     with patch.dict(main_mod.wrappers, {"b28": wrapper}, clear=True):
-        await main_mod._bring_up_model(model, wrapper)
+        await main_mod._bring_up_model(model, wrapper, status)
         wrapper.start.assert_not_awaited()
         assert not any(w.process and w.process.returncode is None for w in main_mod.wrappers.values())
+        assert (status.phase, status.error_code) == (WarmupPhase.FAILED, "engine_start_failed")
 
 
 @pytest.mark.asyncio
@@ -613,12 +667,14 @@ async def test_bringup_rejects_failed_post_download_verification(tmp_path):
 
     executor = ThreadPoolExecutor(max_workers=1)
     try:
+        status = WarmupStatus()
         with patch.dict(main_mod.wrappers, {"b28": wrapper}, clear=True), \
              patch("realtime_api.main._download_executor", executor), \
              patch("realtime_api.main._download_model", side_effect=fake_download):
-            await main_mod._bring_up_model(model, wrapper)
+            await main_mod._bring_up_model(model, wrapper, status)
             wrapper.start.assert_not_awaited()
             assert not any(w.process and w.process.returncode is None for w in main_mod.wrappers.values())
+            assert (status.phase, status.error_code) == (WarmupPhase.FAILED, "engine_start_failed")
     finally:
         executor.shutdown(wait=True)
 
